@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="es" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Automatización de Ventas con IA & WhatsApp</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        darkBg: '#0b0f17',
+                        cardBg: '#131b2e',
+                        accentBlue: '#2563eb',
+                        accentCyan: '#06b6d4'
+                    }
+                }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-darkBg text-gray-200 antialiased selection:bg-accentBlue selection:text-white">
+
+    <nav class="max-w-7xl mx-auto px-6 py-6 flex justify-between items-center border-b border-gray-800">
+        <div class="text-xl font-bold text-white tracking-wider flex items-center gap-2">
+            <span class="text-accentCyan">🤖</span> AGENCIA IA
+        </div>
+        <a href="#contacto" class="bg-accentBlue hover:bg-blue-700 text-white font-semibold px-5 py-2.5 rounded-xl transition duration-300 shadow-lg shadow-blue-500/20">
+            Agendar Demo
+        </a>
+    </nav>
+
+    <header class="max-w-5xl mx-auto px-6 pt-20 pb-16 text-center">
+        <span class="inline-block py-1 px-3 rounded-full bg-blue-900/40 text-accentCyan text-sm font-semibold mb-6 border border-cyan-500/30">
+            Sistemas Autónomos de Ventas 24/7
+        </span>
+        <h1 class="text-4xl md:text-6xl font-extrabold text-white leading-tight tracking-tight mb-6">
+            Automatiza las ventas de tu negocio con <span class="bg-gradient-to-r from-accentCyan to-accentBlue bg-clip-text text-transparent">Agentes de IA</span>
+        </h1>
+        <p class="text-lg md:text-xl text-gray-400 max-w-3xl mx-auto mb-10">
+            Atiende clientes en WhatsApp en tiempo real, sincroniza tu inventario en PostgreSQL y gestiona todo desde un panel web intuitivo sin intervención humana.
+        </p>
+        <div class="flex flex-col sm:flex-row justify-center gap-4">
+            <a href="https://panel-ventas.streamlit.app" target="_blank" class="bg-gradient-to-r from-accentBlue to-accentCyan hover:opacity-90 text-white font-bold px-8 py-4 rounded-xl transition duration-300 shadow-lg shadow-cyan-500/20">
+                Ver Panel de Control (Demo)
+            </a>
+            <a href="#caracteristicas" class="bg-cardBg border border-gray-700 hover:border-gray-500 text-gray-300 font-semibold px-8 py-4 rounded-xl transition duration-300">
+                Conocer Funcionalidades
+            </a>
+        </div>
+    </header>
+
+    <section id="caracteristicas" class="max-w-7xl mx-auto px-6 py-16">
+        <div class="text-center mb-16">
+            <h2 class="text-3xl font-bold text-white">Solución Integral de Operaciones</h2>
+            <p class="text-gray-400 mt-2">Todo lo que necesitas para escalar tu atención comercial sin aumentar personal.</p>
+        </div>
+
+        <div class="grid md:grid-cols-3 gap-8">
+            <div class="bg-cardBg border border-gray-800 p-8 rounded-2xl hover:border-accentBlue transition duration-300">
+                <div class="text-4xl mb-4">💬</div>
+                <h3 class="text-xl font-bold text-white mb-2">Integración Meta & WhatsApp</h3>
+                <p class="text-gray-400 text-sm leading-relaxed">
+                    Atención automatizada mediante Meta Cloud API. Tus clientes reciben respuestas instantáneas, consulta de productos y cierres de venta a cualquier hora.
+                </p>
+            </div>
+
+            <div class="bg-cardBg border border-gray-800 p-8 rounded-2xl hover:border-accentBlue transition duration-300">
+                <div class="text-4xl mb-4">📦</div>
+                <h3 class="text-xl font-bold text-white mb-2">Inventario en Tiempo Real</h3>
+                <p class="text-gray-400 text-sm leading-relaxed">
+                    Base de datos PostgreSQL sincronizada. Modifica precios o stock en segundos desde un panel web y el bot actualizará su discurso al instante.
+                </p>
+            </div>
+
+            <div class="bg-cardBg border border-gray-800 p-8 rounded-2xl hover:border-accentBlue transition duration-300">
+                <div class="text-4xl mb-4">🛠️</div>
+                <h3 class="text-xl font-bold text-white mb-2">Soporte Técnico con IA</h3>
+                <p class="text-gray-400 text-sm leading-relaxed">
+                    Incluye un Ingeniero de Soporte IA exclusivo para el administrador. Diagnóstico de problemas, estado del sistema y asistencia técnica integrada.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <footer id="contacto" class="border-t border-gray-800 bg-black/40 py-16 mt-12">
+        <div class="max-w-4xl mx-auto text-center px-6">
+            <h2 class="text-3xl font-bold text-white mb-4">¿Listo para automatizar tu negocio?</h2>
+            <p class="text-gray-400 mb-8">Ponte en contacto para solicitar una demostración en vivo ajustada a tu catálogo.</p>
+            <div class="inline-flex items-center gap-3 bg-cardBg border border-gray-700 px-6 py-3 rounded-xl text-lg font-mono text-accentCyan">
+                <span>✉️</span> contacto@tuagencia.cl
+            </div>
+            <p class="text-xs text-gray-600 mt-12">© 2026 Todos los derechos reservados.</p>
+        </div>
+    </footer>
+
+</body>
+</html>

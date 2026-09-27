@@ -1,20 +1,16 @@
 import json
 import os
-import sys
 from datetime import datetime, timezone, timedelta
 import requests
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, Request, Response
 
 # ------------------------------------------------------------------------------
-# 1. Configuración de API Keys y Carga de Catálogo
+# 1. Configuración desde Variables de Entorno de Render
 # ------------------------------------------------------------------------------
-GEMINI_API_KEY = "AQ.Ab8RN6JfCR1a3Kwg-yzwzC1X72ZnoBoDva3wApiW0XfXfZZq-w"
-
-# Nuevo Token de Meta proporcionado
-WHATSAPP_TOKEN = "EAAeol1PvNZAIBSq7OcLZCoboOXEElmsiih8QTGVbJeXUXV5LOpfkZBfYhDexg1YoOSoOkA2pj1M39L8bjomSZCRUZCBIC0iryXJfEsOOteCBLw6tBYhq7J5TgW3HT7ZBrlHGpYygaC1Lvkcy7X1MFKWjAbaU7WZBtgTAmZBtkiX8seZCpbFfVTzUnGIjJySB1maFaxbdUc8Y4ZC1iZA1wZCbvzZCW3mMWWa1yGHI2KiL5IVx5Skh2oAZBleseVnIVzQOZAqb5bZCJS1PZCELmBcpAkiZARjh61jAZDZD"
-
-PHONE_NUMBER_ID = "1293789687158465"
-VERIFY_TOKEN = "don_tito_ferreteria_secret_token"
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "AQ.Ab8RN6JfCR1a3Kwg-yzwzC1X72ZnoBoDva3wApiW0XfXfZZq-w")
+WHATSAPP_TOKEN = os.environ.get("WHATSAPP_TOKEN")
+PHONE_NUMBER_ID = os.environ.get("PHONE_NUMBER_ID", "1293789687158465")
+VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN", "don_tito_ferreteria_secret_token")
 
 try:
     with open("catalog.json", "r", encoding="utf-8") as f:
@@ -53,9 +49,12 @@ def obtener_contexto_horario():
 # ------------------------------------------------------------------------------
 def send_whatsapp_message(recipient, text):
     """Envía el mensaje de respuesta al cliente vía WhatsApp."""
-    url = f"https://graph.facebook.com/v18.0/{PHONE_NUMBER_ID}/messages"
+    token_actual = os.environ.get("WHATSAPP_TOKEN", WHATSAPP_TOKEN)
+    phone_id_actual = os.environ.get("PHONE_NUMBER_ID", PHONE_NUMBER_ID)
+
+    url = f"https://graph.facebook.com/v20.0/{phone_id_actual}/messages"
     headers = {
-        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+        "Authorization": f"Bearer {token_actual}",
         "Content-Type": "application/json",
     }
     payload = {
@@ -73,7 +72,8 @@ def send_whatsapp_message(recipient, text):
 
 def ask_don_tito(user_text):
     """Consulta a Gemini 3.8 Flash construyendo el prompt con las reglas de Don Tito."""
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={GEMINI_API_KEY}"
+    gemini_key = os.environ.get("GEMINI_API_KEY", GEMINI_API_KEY)
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={gemini_key}"
     
     contexto = obtener_contexto_horario()
 
@@ -122,7 +122,8 @@ def health_check():
 @app.get("/webhook")
 def verify_webhook(request: Request):
     params = request.query_params
-    if params.get("hub.mode") == "subscribe" and params.get("hub.verify_token") == VERIFY_TOKEN:
+    verify_token_actual = os.environ.get("VERIFY_TOKEN", VERIFY_TOKEN)
+    if params.get("hub.mode") == "subscribe" and params.get("hub.verify_token") == verify_token_actual:
         return Response(content=params.get("hub.challenge"), status_code=200, media_type="text/plain")
     return Response(content="Error de verificación", status_code=403)
 

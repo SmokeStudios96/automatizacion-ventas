@@ -1,0 +1,22 @@
+[
+  {"sku": "CEM-001", "nombre": "Cemento Melón Especial 25kg", "precio": 5990, "stock": 120, "categoria": "Obra gruesa"},
+  {"sku": "PLA-002", "nombre": "Placa OSB 11mm 1.22x2.44m", "precio": 10490, "stock": 45, "categoria": "Tableros"},
+  {"sku": "PLA-003", "nombre": "Placa Volcanita Estándar 10mm 1.2x2.4m", "precio": 7890, "stock": 80, "categoria": "Tableros"},
+  {"sku": "PIN-004", "nombre": "Esmalte al Agua Blanco Tineta 5 Galones", "precio": 32990, "stock": 15, "categoria": "Pinturas"},
+  {"sku": "PIN-005", "nombre": "Óleo Opaco Blanco 1 Galón", "precio": 14990, "stock": 22, "categoria": "Pinturas"},
+  {"sku": "MAD-006", "nombre": "Pino Insigne 2x4x3.2m Bruto", "precio": 4290, "stock": 200, "categoria": "Maderas"},
+  {"sku": "MAD-007", "nombre": "Pino Insigne 1x4x3.2m Cepillado", "precio": 3190, "stock": 150, "categoria": "Maderas"},
+  {"sku": "FIJ-008", "nombre": "Tornillo CRS 6x1 5/8 (Caja 500 un)", "precio": 4990, "stock": 60, "categoria": "Fijaciones"},
+  {"sku": "FIJ-009", "nombre": "Clavo Corriente 2 1/2 con Cabeza (Kg)", "precio": 2490, "stock": 100, "categoria": "Fijaciones"},
+  {"sku": "HER-010", "nombre": "Martillo Galponero 16oz Mango Fibra", "precio": 8990, "stock": 18, "categoria": "Herramientas"},
+  {"sku": "HER-011", "nombre": "Esmeril Angular 4 1/2 750W", "precio": 34990, "stock": 8, "categoria": "Herramientas"},
+  {"sku": "HER-012", "nombre": "Taladro Percutor 13mm 650W", "precio": 29990, "stock": 12, "categoria": "Herramientas"},
+  {"sku": "CUB-013", "nombre": "Placa Zinc Acanalada 0.35mm 3.66m", "precio": 9890, "stock": 90, "categoria": "Techumbre"},
+  {"sku": "CUB-014", "nombre": "Fieltro Asfáltico 15 Lbs (Roll 40m2)", "precio": 16990, "stock": 35, "categoria": "Techumbre"},
+  {"sku": "AGU-015", "nombre": "Tubo PVC Hidráulico 20mm x 6m", "precio": 3890, "stock": 75, "categoria": "Gasfitería"},
+  {"sku": "AGU-016", "nombre": "Adhesivo PVC 125cc con Pincel", "precio": 3290, "stock": 40, "categoria": "Gasfitería"},
+  {"sku": "ELE-017", "nombre": "Cable NYA 1.5mm2 Blanco (Rollo 100m)", "precio": 24990, "stock": 25, "categoria": "Electricidad"},
+  {"sku": "ELE-018", "nombre": "Interruptor Simple Embutir Blanco", "precio": 1890, "stock": 110, "categoria": "Electricidad"},
+  {"sku": "ADH-019", "nombre": "Bekron Estándar Sacos 25kg", "precio": 6490, "stock": 95, "categoria": "Adhesivos"},
+  {"sku": "ADH-020", "nombre": "Silicona Transparente Multiuso 280ml", "precio": 3490, "stock": 50, "categoria": "Adhesivos"}
+]

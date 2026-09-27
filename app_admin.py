@@ -69,7 +69,7 @@ else:
     # --- SECCIÓN 1: CHAT CON AGENTE IA (AGNO) ---
     if opcion_menu == "💬 Chat con Agente IA":
         st.subheader("🤖 Agente IA de Soporte Técnico & Consultas en Vivo")
-        st.caption("Asistente inteligente impulsado por Agno y Gemini.")
+        st.caption("Asistente inteligente impulsado por Agno y Gemini 3.8 Flash.")
 
         # Mostrar historial de conversación actual
         for msg in st.session_state.mensajes_chat:
@@ -90,10 +90,10 @@ else:
                 prod_info = "\n".join([f"- {p.nombre} (SKU: {p.sku}): ${p.precio:.0f} | Stock: {p.stock}" for p in productos]) if productos else "No hay productos registrados."
 
                 try:
-                    # Instanciar el agente Agno adaptado a las configuraciones del negocio
+                    # Instanciar el agente Agno configurado con Gemini 3.8 Flash
                     agente_soporte = Agent(
                         name=f"Soporte {negocio.nombre_negocio if negocio else 'SaaS'}",
-                        model=Gemini(id="gemini-2.5-flash"),
+                        model=Gemini(id="gemini-3.8-flash"),
                         description=f"Eres un agente de soporte técnico experto y atención al cliente para {negocio.nombre_negocio if negocio else 'el negocio'}.",
                         instructions=[
                             f"Tu personalidad asignada: {negocio.persona_ia if negocio and negocio.persona_ia else 'Asistente técnico amable'}",

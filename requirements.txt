@@ -3,3 +3,5 @@ uvicorn
 requests
 sqlalchemy
 psycopg2-binary
+streamlit
+pandas

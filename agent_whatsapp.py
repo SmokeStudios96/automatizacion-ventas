@@ -7,8 +7,11 @@ from fastapi import FastAPI, Request, Response
 # ------------------------------------------------------------------------------
 # 1. Configuración desde Variables de Entorno de Render
 # ------------------------------------------------------------------------------
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "AQ.Ab8RN6JfCR1a3Kwg-yzwzC1X72ZnoBoDva3wApiW0XfXfZZq-w")
-WHATSAPP_TOKEN = os.environ.get("WHATSAPP_TOKEN")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "AQ.Ab8RN6Kgnd0mzuoF1_SSh735CY_Q8_e00DY_RJJYOxz1VmFx3w")
+WHATSAPP_TOKEN = os.environ.get(
+    "WHATSAPP_TOKEN",
+    "EAAeol1PvNZAIBSrfP62tK2YzT7UhaukOY6wlSSdewForp4QGWdr08KZCETq7G66ko94oCuAkNcJkmFVn5YZCR4htYu6snqSGSrnlOUo0idFZAZAR3Klq3VFtqmTxPlezU5fme6TZAGyjMh8rQObUjRcPLr5QXpZBiiekZCtrMLImSZCccV9fGLmmnaxdIotVtZAnVcZBzO3pJXKJmfFwzvkED4VIT78QL0i4NNm1fak111XrLRWR2wO8MqByEBz65TsmxFDv4QZAGPt9WM8amAy4YgrjegZDZD"
+)
 PHONE_NUMBER_ID = os.environ.get("PHONE_NUMBER_ID", "1293789687158465")
 VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN", "don_tito_ferreteria_secret_token")
 
@@ -102,12 +105,16 @@ Mensaje del cliente: {user_text}
     }
     headers = {"Content-Type": "application/json"}
     
-    response = requests.post(url, json=payload, headers=headers)
-    if response.status_code == 200:
-        data = response.json()
-        return data["candidates"][0]["content"]["parts"][0]["text"]
-    else:
-        print(f"❌ Error HTTP de Gemini ({response.status_code}): {response.text}")
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        if response.status_code == 200:
+            data = response.json()
+            return data["candidates"][0]["content"]["parts"][0]["text"]
+        else:
+            print(f"❌ Error HTTP de Gemini ({response.status_code}): {response.text}")
+            return "Lo siento compadre, ocurrió un problema al consultar el sistema."
+    except Exception as e:
+        print(f"❌ Excepción en llamada Gemini: {e}")
         return "Lo siento compadre, ocurrió un problema al consultar el sistema."
 
 # ------------------------------------------------------------------------------

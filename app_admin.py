@@ -110,8 +110,46 @@ else:
                 negocio = db.query(NegocioConfig).filter(NegocioConfig.id == st.session_state.negocio_id).first()
 
                 # SUPER PROMPT DE CONOCIMIENTO TÉCNICO Y DIAGNÓSTICO DEL SAAS
-                conocimiento_sistema = """
-                === GUÍA TÉCNICA Y PROTOCOLOS DE DIAGNÓSTICO DEL SAAS DE AUTOMATIZACIÓN DE VENTAS ===
+                conocimiento_sistema = (
+                    "GUIA TECNICA Y PROTOCOLOS DE DIAGNOSTICO DEL SAAS DE AUTOMATIZACION DE VENTAS:\n\n"
+                    "1. WHATSAPP / META API:\n"
+                    "- Si el bot no responde: Verificar Token de Acceso (tokens temporales duran 24h, usar System User permanente). Verificar Webhook en Meta for Developers (debe estar Active y evento messages suscrito). Recordar ventana de 24h de Meta para mensajes libres.\n"
+                    "- Si responde duplicado: Existen múltiples instancias activas del servidor o reintentos del Webhook de Meta si la API tarda mas de 3s en responder HTTP 200.\n\n"
+                    "2. BASE DE DATOS Y PANEL:\n"
+                    "- Si entrega precios desactualizados: El bot consulta PostgreSQL en tiempo real. Se debe actualizar en 'Gestion de Inventario' y presionar 'Guardar Cambios en la Nube'.\n"
+                    "- Si no guarda cambios: Recordar presionar Enter en la celda antes de presionar el boton de guardar.\n\n"
+                    "3. MODELOS DE IA:\n"
+                    "- Errores de API: Verificar cuota en Google AI Studio y asegurar el uso del modelo oficial activo (Gemini 3.8 Flash).\n\n"
+                    "4. GARANTIA (2 MESES):\n"
+                    "- Cobertura: Corrección de fallos en codigo base, re-configuración de Webhooks/Servidores, ajustes de personalidad del agente y sincronización de datos.\n"
+                    "- Escalar a Desarrollador Principal: Caída total del servidor de alojamiento (Render/VPS), pérdida de acceso a Meta Business Manager o nuevas funcionalidades."
+                )
 
-                OBJETIVO DEL ASISTENTE:
-                Eres el Ingeniero de Soporte Técnico Senior especializado en la infraestructura de este SaaS de Automatización de Ventas. Tu misión es diagnosticar, guiar paso a paso al cliente/administrador y resolver cualquier duda técnica de forma clara, directa y empática.
+                try:
+                    agente_soporte = Agent(
+                        name="Ingeniero Soporte SaaS",
+                        model=Gemini(id="gemini-3.8-flash"),
+                        description="Eres el especialista senior en soporte técnico del SaaS de automatización de ventas para los administradores.",
+                        instructions=[
+                            f"Estás atendiendo al cliente/administrador de: '{negocio.nombre_negocio if negocio else 'Cliente'}'.",
+                            "Actúa como un Ingeniero de Soporte Nivel 1 & 2 experto, servicial, calmado y muy pedagógico.",
+                            "Cuando te reporten un problema, estructura tu respuesta en:",
+                            "  1. Diagnóstico probable de lo que ocurre.",
+                            "  2. Pasos numerados claros y directos que el usuario puede realizar por sí mismo.",
+                            "  3. Confirmación de si la solución funcionó.",
+                            f"Basa siempre tus soluciones en el manual técnico interno:\n{conocimiento_sistema}",
+                            "Si el problema requiere cambios profundos de código o la caída del servidor principal, indícales amablemente que lo cubre su garantía de 2 meses y que lo reporte para una intervención técnica directa."
+                        ],
+                        markdown=True
+                    )
+
+                    response = agente_soporte.run(prompt)
+                    respuesta_bot = response.content
+
+                except Exception as e:
+                    respuesta_bot = f"⚠️ Error al conectar con el soporte técnico: {e}"
+
+                st.write(respuesta_bot)
+                st.session_state.mensajes_chat.append({"role": "assistant", "content": respuesta_bot})
+
+    db.close()

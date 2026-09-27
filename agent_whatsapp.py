@@ -10,7 +10,7 @@ from fastapi import FastAPI, Request, Response
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "AQ.Ab8RN6Kgnd0mzuoF1_SSh735CY_Q8_e00DY_RJJYOxz1VmFx3w")
 WHATSAPP_TOKEN = os.environ.get(
     "WHATSAPP_TOKEN",
-    "EAAeol1PvNZAIBSnJhPSTbOmewq3xS5H229ZC5PL2vZCyvnnxc6xMSnZBxJC1YygA1mQZBNlT2S14kVp5TlGvo4SoErjciw2pP0S5yqz6ukG8h5GrWKewyV9EzILwf10o515hQEe6ZCuWx3xXQOtcCLQkb3IXUkyfOoAzZC8OZCgZBvZClfz86bEzlKt5PWs3PDbgZDZD"
+    "EAAeol1PvNZAIBSrfP62tK2YzT7UhaukOY6wlSSdewForp4QGWdr08KZCETq7G66ko94oCuAkNcJkmFVn5YZCR4htYu6snqSGSrnlOUo0idFZAZAR3Klq3VFtqmTxPlezU5fme6TZAGyjMh8rQObUjRcPLr5QXpZBiiekZCtrMLImSZCccV9fGLmmnaxdIotVtZAnVcZBzO3pJXKJmfFwzvkED4VIT78QL0i4NNm1fak111XrLRWR2wO8MqByEBz65TsmxFDv4QZAGPt9WM8amAy4YgrjegZDZD"
 )
 PHONE_NUMBER_ID = os.environ.get("PHONE_NUMBER_ID", "1293789687158465")
 VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN", "don_tito_ferreteria_secret_token")
@@ -74,9 +74,9 @@ def send_whatsapp_message(recipient, text):
         print(f"❌ Detalles error Meta: {response.text}")
 
 def ask_don_tito(user_text):
-    """Consulta a Gemini 3.8 Flash construyendo el prompt con las reglas de Don Tito."""
+    """Consulta a Gemini 3.6 Flash construyendo el prompt con las reglas de Don Tito."""
     gemini_key = os.environ.get("GEMINI_API_KEY", GEMINI_API_KEY)
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={gemini_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key={gemini_key}"
     
     contexto = obtener_contexto_horario()
 

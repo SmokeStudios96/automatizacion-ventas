@@ -5,3 +5,5 @@ sqlalchemy
 psycopg2-binary
 streamlit
 pandas
+agno
+google-genai

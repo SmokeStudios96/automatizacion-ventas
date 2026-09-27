@@ -1,6 +1,9 @@
+import os
 import streamlit as st
 import pandas as pd
-from database import SessionLocal, Producto, NegocioConfig, HistorialMensaje
+from agno.agent import Agent
+from agno.models.google import Gemini
+from database import SessionLocal, Producto, NegocioConfig
 
 st.set_page_config(page_title="Panel de Gestión & Asistente IA", page_icon="🤖", layout="wide")
 
@@ -36,7 +39,7 @@ if not st.session_state.autenticado:
             st.session_state.nombre_negocio = negocio.nombre_negocio
             # Cargar mensaje inicial de bienvenida en el chat
             st.session_state.mensajes_chat = [
-                {"role": "assistant", "content": f"¡Hola! Soy el asistente IA de **{negocio.nombre_negocio}**. ¿En qué te puedo ayudar hoy con el soporte o el inventario?"}
+                {"role": "assistant", "content": f"¡Hola! Soy el asistente técnico de **{negocio.nombre_negocio}**. ¿En qué te puedo ayudar hoy con el soporte o el inventario?"}
             ]
             st.success(f"¡Bienvenido, {negocio.nombre_negocio}!")
             db.close()
@@ -63,32 +66,52 @@ else:
         db.close()
         st.rerun()
 
-    # --- SECCIÓN 1: CHAT CON AGENTE IA ---
+    # --- SECCIÓN 1: CHAT CON AGENTE IA (AGNO) ---
     if opcion_menu == "💬 Chat con Agente IA":
-        st.subheader("🤖 Asistente de Soporte & Consultas en Vivo")
-        st.caption("Interactúa directamente con el agente inteligente de tu negocio.")
+        st.subheader("🤖 Agente IA de Soporte Técnico & Consultas en Vivo")
+        st.caption("Asistente inteligente impulsado por Agno y Gemini.")
 
-        # Mostrar historial de conversación actual en la interfaz
+        # Mostrar historial de conversación actual
         for msg in st.session_state.mensajes_chat:
             with st.chat_message(msg["role"]):
                 st.write(msg["content"])
 
         # Caja de entrada para mensajes del usuario
-        if prompt := st.chat_input("Escribe tu consulta o soporte aquí..."):
-            # Mostrar mensaje del usuario
+        if prompt := st.chat_input("Escribe tu consulta de soporte o inventario aquí..."):
             st.session_state.mensajes_chat.append({"role": "user", "content": prompt})
             with st.chat_message("user"):
                 st.write(prompt)
 
-            # Lógica simple de respuesta del agente (Soporte + Consulta de Inventario)
             with st.chat_message("assistant"):
-                # Consultar productos del negocio
+                # Cargar datos del negocio e inventario desde PostgreSQL
+                negocio = db.query(NegocioConfig).filter(NegocioConfig.id == st.session_state.negocio_id).first()
                 productos = db.query(Producto).filter(Producto.negocio_id == st.session_state.negocio_id).all()
+                
                 prod_info = "\n".join([f"- {p.nombre} (SKU: {p.sku}): ${p.precio:.0f} | Stock: {p.stock}" for p in productos]) if productos else "No hay productos registrados."
 
-                # Respuesta simulada/asistida por el inventario (se puede conectar a Gemini API más adelante)
-                respuesta_bot = f"Recibido tu mensaje: *'{prompt}'*.\n\nActualmente en tu base de datos tienes estos productos registrados:\n{prod_info}"
-                
+                try:
+                    # Instanciar el agente Agno adaptado a las configuraciones del negocio
+                    agente_soporte = Agent(
+                        name=f"Soporte {negocio.nombre_negocio if negocio else 'SaaS'}",
+                        model=Gemini(id="gemini-2.5-flash"),
+                        description=f"Eres un agente de soporte técnico experto y atención al cliente para {negocio.nombre_negocio if negocio else 'el negocio'}.",
+                        instructions=[
+                            f"Tu personalidad asignada: {negocio.persona_ia if negocio and negocio.persona_ia else 'Asistente técnico amable'}",
+                            f"Reglas de atención: {negocio.reglas_atencion if negocio and negocio.reglas_atencion else 'Responder breve y claro.'}",
+                            "Ayuda a los clientes a resolver problemas técnicos, recomendar materiales y orientar sobre compras.",
+                            f"Consulta el siguiente INVENTARIO ACTUALIZADO para dar precios y verificar stock:\n{prod_info}",
+                            "Si te preguntan por un producto fuera de la lista, indica de forma educada que no está disponible."
+                        ],
+                        markdown=True
+                    )
+
+                    # Ejecutar el agente con Agno
+                    response = agente_soporte.run(prompt)
+                    respuesta_bot = response.content
+
+                except Exception as e:
+                    respuesta_bot = f"⚠️ Error al conectar con el agente Agno: {e}"
+
                 st.write(respuesta_bot)
                 st.session_state.mensajes_chat.append({"role": "assistant", "content": respuesta_bot})
 

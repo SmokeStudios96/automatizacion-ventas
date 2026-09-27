@@ -39,7 +39,7 @@ if not st.session_state.autenticado:
             st.session_state.nombre_negocio = negocio.nombre_negocio
             # Cargar mensaje inicial de bienvenida en el chat
             st.session_state.mensajes_chat = [
-                {"role": "assistant", "content": f"¡Hola! Soy el asistente técnico de **{negocio.nombre_negocio}**. ¿En qué te puedo ayudar hoy con el soporte o el inventario?"}
+                {"role": "assistant", "content": f"¡Hola! Soy tu **Ingeniero de Soporte Técnico del SaaS**. Estoy aquí para ayudarte a resolver cualquier inconveniente con tu automatización de ventas, problemas de conexión en WhatsApp/Meta o dudas sobre **{negocio.nombre_negocio}**. ¿En qué te puedo colaborar hoy?"}
             ]
             st.success(f"¡Bienvenido, {negocio.nombre_negocio}!")
             db.close()
@@ -49,12 +49,12 @@ if not st.session_state.autenticado:
     db.close()
 
 else:
-    # 3. Menú Lateral de Navegación una vez autenticado
+    # 3. Menú Lateral de Navegación (Gestión de Inventario primero)
     st.sidebar.markdown(f"### 🏢 **{st.session_state.nombre_negocio}**")
     
     opcion_menu = st.sidebar.radio(
         "Selecciona una opción:",
-        ["💬 Chat con Agente IA", "📦 Gestión de Inventario"]
+        ["📦 Gestión de Inventario", "💬 Soporte Técnico del Sistema"]
     )
     
     st.sidebar.markdown("---")
@@ -66,57 +66,8 @@ else:
         db.close()
         st.rerun()
 
-    # --- SECCIÓN 1: CHAT CON AGENTE IA (AGNO) ---
-    if opcion_menu == "💬 Chat con Agente IA":
-        st.subheader("🤖 Agente IA de Soporte Técnico & Consultas en Vivo")
-        st.caption("Asistente inteligente impulsado por Agno y Gemini 3.8 Flash.")
-
-        # Mostrar historial de conversación actual
-        for msg in st.session_state.mensajes_chat:
-            with st.chat_message(msg["role"]):
-                st.write(msg["content"])
-
-        # Caja de entrada para mensajes del usuario
-        if prompt := st.chat_input("Escribe tu consulta de soporte o inventario aquí..."):
-            st.session_state.mensajes_chat.append({"role": "user", "content": prompt})
-            with st.chat_message("user"):
-                st.write(prompt)
-
-            with st.chat_message("assistant"):
-                # Cargar datos del negocio e inventario desde PostgreSQL
-                negocio = db.query(NegocioConfig).filter(NegocioConfig.id == st.session_state.negocio_id).first()
-                productos = db.query(Producto).filter(Producto.negocio_id == st.session_state.negocio_id).all()
-                
-                prod_info = "\n".join([f"- {p.nombre} (SKU: {p.sku}): ${p.precio:.0f} | Stock: {p.stock}" for p in productos]) if productos else "No hay productos registrados."
-
-                try:
-                    # Instanciar el agente Agno configurado con Gemini 3.8 Flash
-                    agente_soporte = Agent(
-                        name=f"Soporte {negocio.nombre_negocio if negocio else 'SaaS'}",
-                        model=Gemini(id="gemini-3.8-flash"),
-                        description=f"Eres un agente de soporte técnico experto y atención al cliente para {negocio.nombre_negocio if negocio else 'el negocio'}.",
-                        instructions=[
-                            f"Tu personalidad asignada: {negocio.persona_ia if negocio and negocio.persona_ia else 'Asistente técnico amable'}",
-                            f"Reglas de atención: {negocio.reglas_atencion if negocio and negocio.reglas_atencion else 'Responder breve y claro.'}",
-                            "Ayuda a los clientes a resolver problemas técnicos, recomendar materiales y orientar sobre compras.",
-                            f"Consulta el siguiente INVENTARIO ACTUALIZADO para dar precios y verificar stock:\n{prod_info}",
-                            "Si te preguntan por un producto fuera de la lista, indica de forma educada que no está disponible."
-                        ],
-                        markdown=True
-                    )
-
-                    # Ejecutar el agente con Agno
-                    response = agente_soporte.run(prompt)
-                    respuesta_bot = response.content
-
-                except Exception as e:
-                    respuesta_bot = f"⚠️ Error al conectar con el agente Agno: {e}"
-
-                st.write(respuesta_bot)
-                st.session_state.mensajes_chat.append({"role": "assistant", "content": respuesta_bot})
-
-    # --- SECCIÓN 2: GESTIÓN DE INVENTARIO ---
-    elif opcion_menu == "📦 Gestión de Inventario":
+    # --- SECCIÓN 1: GESTIÓN DE INVENTARIO ---
+    if opcion_menu == "📦 Gestión de Inventario":
         st.subheader(f"📦 Inventario de {st.session_state.nombre_negocio}")
 
         productos = db.query(Producto).filter(Producto.negocio_id == st.session_state.negocio_id).all()
@@ -139,4 +90,28 @@ else:
         else:
             st.warning("Este negocio no tiene productos registrados en la base de datos.")
 
-    db.close()
+    # --- SECCIÓN 2: SOPORTE TÉCNICO DEL SISTEMA (AGNO) ---
+    elif opcion_menu == "💬 Soporte Técnico del Sistema":
+        st.subheader("🛠️ Asistente de Soporte Técnico del SaaS")
+        st.caption("Resuelve dudas operativas, fallos de conexión y uso del panel en tiempo real.")
+
+        # Mostrar historial de conversación actual
+        for msg in st.session_state.mensajes_chat:
+            with st.chat_message(msg["role"]):
+                st.write(msg["content"])
+
+        # Caja de entrada para mensajes del usuario
+        if prompt := st.chat_input("Escribe tu consulta técnica o problema aquí..."):
+            st.session_state.mensajes_chat.append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.write(prompt)
+
+            with st.chat_message("assistant"):
+                negocio = db.query(NegocioConfig).filter(NegocioConfig.id == st.session_state.negocio_id).first()
+
+                # SUPER PROMPT DE CONOCIMIENTO TÉCNICO Y DIAGNÓSTICO DEL SAAS
+                conocimiento_sistema = """
+                === GUÍA TÉCNICA Y PROTOCOLOS DE DIAGNÓSTICO DEL SAAS DE AUTOMATIZACIÓN DE VENTAS ===
+
+                OBJETIVO DEL ASISTENTE:
+                Eres el Ingeniero de Soporte Técnico Senior especializado en la infraestructura de este SaaS de Automatización de Ventas. Tu misión es diagnosticar, guiar paso a paso al cliente/administrador y resolver cualquier duda técnica de forma clara, directa y empática.

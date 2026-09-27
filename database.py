@@ -7,6 +7,12 @@ from datetime import datetime
 # URL de conexión externa optimizada para pruebas desde tu entorno local
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql+psycopg2://admin_ventas:DBPruvLsZoyEXZo4Cu9my8LlNoXTn5h6@dpg-dasmt7m0tbcc7384ivvg-a.virginia-postgres.render.com/ventas_db_48lr")
 
+# Asegurar explícitamente el uso de psycopg2 para evitar errores en la nube
+if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
+elif DATABASE_URL and DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
+
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()

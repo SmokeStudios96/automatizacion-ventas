@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import create_engine, Column, Integer, String, Float, Text, DateTime, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, Float, Text, DateTime, ForeignKey, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
@@ -22,6 +22,8 @@ class NegocioConfig(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     nombre_negocio = Column(String(100), nullable=False)
+    usuario = Column(String(50), unique=True, index=True, nullable=True) # Credencial de acceso
+    password = Column(String(100), nullable=True) # Contraseña del cliente
     persona_ia = Column(String(100), nullable=False)
     reglas_atencion = Column(Text, nullable=True)
     telefono_contacto = Column(String(20), nullable=True)
@@ -51,9 +53,16 @@ class HistorialMensaje(Base):
     fecha = Column(DateTime, default=datetime.utcnow)
 
 def init_db():
-    """Crea las tablas en la base de datos si no existen."""
+    """Crea las tablas y asegura que existan todas las columnas necesarias en PostgreSQL."""
     Base.metadata.create_all(bind=engine)
-    print("✅ Tablas genéricas verificadas/creadas en PostgreSQL.")
+    
+    # Asegurar columnas nuevas en tablas ya existentes en la nube
+    with engine.connect() as conn:
+        conn.execute(text('ALTER TABLE negocios ADD COLUMN IF NOT EXISTS usuario VARCHAR(50);'))
+        conn.execute(text('ALTER TABLE negocios ADD COLUMN IF NOT EXISTS password VARCHAR(100);'))
+        conn.commit()
+        
+    print("✅ Tablas y columnas verificadas/creadas con éxito en PostgreSQL.")
 
 if __name__ == "__main__":
     init_db()

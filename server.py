@@ -5,13 +5,19 @@ from datetime import datetime, timezone, timedelta
 from fastapi import FastAPI, HTTPException, Request, Response
 from pydantic import BaseModel
 import requests
+from supabase import create_client, Client
 from agno.agent import Agent
 from agno.models.google import Gemini
 
 # ------------------------------------------------------------------------------
-# 1. Configuración de Credenciales y Carga de Catálogo
+# 1. Configuración de Credenciales, Supabase y Carga de Catálogo
 # ------------------------------------------------------------------------------
 os.environ["GEMINI_API_KEY"] = "AQ.Ab8RN6Kgnd0mzuoF1_SSh735CY_Q8_e00DY_RJJYOxz1VmFx3w"
+
+# Supabase Credentials (extraídas de las variables de entorno o configuración)
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://hbkwldkkfzlunptemxtw.supabase.co")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "tu-supabase-anon-key-aqui")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # Parámetros de Meta WhatsApp Cloud API
 META_ACCESS_TOKEN = "EAAeol1PvNZAIBSiydWCrGsx32nTdbRd8OQqRFtgZA1ba1h8AZAyS1IqV5uzWk6XjMlWB5QhnU8lm3FCWCHFrJgXE0QoIZCsImu4RWLyVoj7ZB4E3iJ9cSAZAQAg3UgHmelML6EJehlM7f3IHYHZBiNLvbscrFWslZBczFXAtvL6U9xaBZCZBpyLaZCSeLTr7TqnZC4e5AA6COfi7GgJPsOJHfM17dY17SLYqOCMy8a4YH36bZBz8Qv6IEnZBcTrGAuAmuRarwZAMLH2Fwh2TFaLyiScQTtDTgZDZD"
@@ -67,7 +73,7 @@ don_tito_agent = Agent(
 # ------------------------------------------------------------------------------
 app = FastAPI(
     title="API Agente Ferretería Don Tito",
-    description="Backend FastAPI con soporte de Webhooks para WhatsApp y Agno",
+    description="Backend FastAPI con soporte de Webhooks para WhatsApp, BSale y Agno",
     version="1.0.0"
 )
 
@@ -165,8 +171,50 @@ async def whatsapp_webhook(request: Request):
 
         return {"status": "ignored", "reason": "No text message payload found"}
     except Exception as e:
-        print(f"Error procesando Webhook: {e}")
+        print(f"Error procesando Webhook de WhatsApp: {e}")
         return {"status": "error", "message": str(e)}
+
+@app.post("/api/webhooks/bsale")
+async def bsale_webhook_handler(request: Request):
+    """
+    Endpoint para recibir cambios de stock o precio desde BSale en tiempo real.
+    """
+    try:
+        data = await request.json()
+        
+        # Obtener datos relevantes del evento de BSale
+        variant_id = data.get("variantId") or data.get("id")
+        sku = data.get("code")
+        new_stock = data.get("quantity")
+        new_price = data.get("price")
+
+        if not sku and not variant_id:
+            return {"status": "ignored", "reason": "No SKU or Variant ID provided"}
+
+        # Mapear datos a actualizar
+        update_fields = {}
+        if new_stock is not None:
+            update_fields["stock"] = int(new_stock)
+        if new_price is not None:
+            update_fields["precio"] = int(new_price)
+
+        if not update_fields:
+            return {"status": "ignored", "reason": "No stock or price changes"}
+
+        # Actualizar en Supabase
+        if sku:
+            supabase.table("productos").update(update_fields).eq("sku", sku).execute()
+        else:
+            supabase.table("productos").update(update_fields).eq("bsale_variant_id", variant_id).execute()
+
+        return {"status": "success", "updated_fields": update_fields}
+
+    except Exception as e:
+        print(f"Error procesando Webhook de BSale: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Error procesando webhook de BSale: {str(e)}"
+        )
 
 # ------------------------------------------------------------------------------
 # 5. Simulador Interactivo en Consola

@@ -1,35 +1,24 @@
-import requests
+import os
+from dotenv import load_dotenv
+from google import genai
 
-API_KEY = "AQ.Ab8RN6Kgnd0mzuoF1_SSh735CY_Q8_e00DY_RJJYOxz1VmFx3w"
+load_dotenv()
 
-url = (
-    "https://generativelanguage.googleapis.com/"
-    "v1beta/models/gemini-3.8-flash:generateContent"
-)
+api_key = os.getenv("GEMINI_API_KEY")
 
-headers = {
-    "Content-Type": "application/json",
-    "x-goog-api-key": API_KEY,
-}
+if not api_key:
+    raise ValueError("Error: No se encontró GEMINI_API_KEY en el archivo .env")
 
-data = {
-    "contents": [
-        {
-            "parts": [
-                {
-                    "text": "Responde solamente: Hola, conexión exitosa."
-                }
-            ]
-        }
-    ]
-}
+client = genai.Client(api_key=api_key)
 
-response = requests.post(
-    url,
-    headers=headers,
-    json=data,
-)
-
-print("STATUS:", response.status_code)
-print("RESPONSE:")
-print(response.text)
+try:
+    response = client.models.generate_content(
+        model="gemini-3.6-flash",
+        contents="Responde solamente: Hola, conexión exitosa."
+    )
+    print("STATUS: 200 SUCCESS")
+    print("RESPONSE:")
+    print(response.text)
+except Exception as e:
+    print("ERROR AL CONECTAR:")
+    print(e)

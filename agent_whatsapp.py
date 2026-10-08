@@ -7,6 +7,8 @@ from fastapi import FastAPI, Request, Response
 from pydantic import BaseModel
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
+from google import genai
+from google.genai import types
 
 from database import SessionLocal, NegocioConfig, Producto, HistorialMensaje, sincronizar_chat_supabase
 
@@ -250,7 +252,7 @@ def send_whatsapp_message(recipient, text):
 
 
 def ask_agent(user_text: str, telefono_cliente: str, nombre_cliente: str = "Cliente") -> str:
-    """Consulta a Gemini API incorporando la información en tiempo real de Google Calendar."""
+    """Consulta a Gemini API usando la SDK oficial `google-genai`."""
     gemini_key = os.environ.get("GEMINI_API_KEY")
     if not gemini_key:
         print("❌ Error: GEMINI_API_KEY no está definida en las variables de entorno.")
@@ -268,7 +270,7 @@ def ask_agent(user_text: str, telefono_cliente: str, nombre_cliente: str = "Clie
     if "mañana" in texto_lower:
         fecha_consulta = (hoy + timedelta(days=1)).strftime("%Y-%m-%d")
         info_agenda = obtener_bloques_ocupados(fecha_consulta)
-    elif "hoy" in texto_lower or "agendar" in texto_lower or "reunion" in texto_lower or "cita" in texto_lower or "hora" in texto_lower:
+    elif any(kw in texto_lower for kw in ["hoy", "agendar", "reunion", "cita", "hora"]):
         fecha_consulta = hoy.strftime("%Y-%m-%d")
         info_agenda = obtener_bloques_ocupados(fecha_consulta)
 
@@ -282,7 +284,7 @@ Contexto operativo: [{contexto}]
 Disponibilidad en Google Calendar (si aplica a la consulta):
 {info_agenda if info_agenda else 'Sin consultas directas a la agenda en este turno.'}
 
-Soluciones y servicios:
+Soluciones y servicios disponibles en base de datos / catálogo:
 {datos['catalogo_texto']}
 
 Mensaje del cliente ({nombre_cliente} - Teléfono: {telefono_cliente}): {user_text}
@@ -293,31 +295,30 @@ Instrucciones de respuesta:
 3. Si el cliente solicita agendar una reunión o demo, utiliza la disponibilidad informada. Si hay un bloque disponible propónselo formalmente.
 """
 
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "temperature": 0.3,
-            "maxOutputTokens": 1200
-        }
-    }
-    headers = {"Content-Type": "application/json"}
+    modelos_a_probar = ["gemini-2.5-flash", "gemini-1.5-flash"]
 
-    # Lista de modelos compatibles para intentar en orden
-    modelos = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"]
+    try:
+        client = genai.Client(api_key=gemini_key)
+        
+        for modelo in modelos_a_probar:
+            try:
+                response = client.models.generate_content(
+                    model=modelo,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        temperature=0.3,
+                        max_output_tokens=1200
+                    )
+                )
+                if response and response.text:
+                    respuesta = response.text.strip()
+                    guardar_historial(telefono_cliente, "bot", respuesta)
+                    return respuesta
+            except Exception as e_mod:
+                print(f"⚠️ Falló consulta con modelo {modelo}: {e_mod}")
 
-    for mod in modelos:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{mod}:generateContent?key={gemini_key}"
-        try:
-            r = requests.post(url, json=payload, headers=headers, timeout=12)
-            if r.status_code == 200:
-                data = r.json()
-                respuesta = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-                guardar_historial(telefono_cliente, "bot", respuesta)
-                return respuesta
-            else:
-                print(f"⚠️ Modelo {mod} devolvió código {r.status_code}: {r.text}")
-        except Exception as e:
-            print(f"⚠️ Excepción consultando modelo {mod}: {e}")
+    except Exception as e:
+        print(f"❌ Error inicializando cliente Google GenAI: {e}")
 
     print("❌ Error: Ningún modelo de Gemini respondió con éxito.")
     return "Hola, un momento por favor. Estamos procesando tu consulta y un ejecutivo te contactará en breve."

@@ -62,7 +62,7 @@ def obtener_contexto_horario() -> str:
 # 2. Inicialización del Agente Comercial con Agno
 # ------------------------------------------------------------------------------
 smoke_commercial_agent = Agent(
-    model=Gemini(id="gemini-3.6-flash"),
+    model=Gemini(id="gemini-2.5-flash"),
     description="Eres el Ejecutivo Comercial Virtual de Smoke Studios.",
     instructions=[
         "Eres un asesor comercial experto, proactivo, transparente, educado y directo.",

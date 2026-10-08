@@ -1,4 +1,29 @@
-__pycache__/
-*.pyc
-venv/
+# Archivos de Entorno y Credenciales Secretas (¡NUNCA SUBIR A GIT!)
 .env
+.env.*
+*.env
+google_credentials.json
+
+# Entornos Virtuales
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Caché de Python y Archivos Compilados
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Bases de datos y logs locales de prueba
+*.db
+*.sqlite3
+*.log
+
+# Archivos de configuración de sistema o editor (VS Code / macOS)
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

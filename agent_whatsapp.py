@@ -1,5 +1,6 @@
 import os
 import time
+import json
 import requests
 from typing import Dict, Tuple
 from datetime import datetime, timezone, timedelta
@@ -138,45 +139,50 @@ def validar_mensaje_entrante(telefono: str, texto_mensaje: str) -> Tuple[bool, s
 
 
 def obtener_datos_negocio():
-    """Retorna los datos de negocio y catálogo de Smoke Studios."""
-    db = SessionLocal()
-    try:
-        negocio = db.query(NegocioConfig).first()
-        if negocio:
-            productos = db.query(Producto).filter(Producto.negocio_id == negocio.id).all()
-            catalogo = "\n".join([
-                f"- {p.nombre} (SKU: {p.sku}): ${p.precio:,.0f} CLP | Categoría: {p.categoria}"
-                for p in productos
-            ]) if productos else ""
-            return {
-                "nombre_negocio": negocio.nombre_negocio,
-                "persona_ia": negocio.persona_ia,
-                "reglas_atencion": negocio.reglas_atencion,
-                "telefono_contacto": negocio.telefono_contacto or CONTACTO_HUMANO,
-                "catalogo_texto": catalogo
-            }
-    except Exception as e:
-        print(f"⚠️ Error leyendo base local: {e}")
-    finally:
-        db.close()
+    """Retorna los datos del negocio cargando prioritariamente catalog.json si está disponible."""
+    catalogo_texto = ""
+    
+    # 1. Intentar cargar el catálogo desde catalog.json
+    if os.path.exists("catalog.json"):
+        try:
+            with open("catalog.json", "r", encoding="utf-8") as f:
+                productos = json.load(f)
+                lineas = [
+                    f"- {p.get('nombre')} (SKU: {p.get('sku')}): ${p.get('precio'):,} CLP | Stock: {p.get('stock')} | Categoría: {p.get('categoria')}"
+                    for p in productos
+                ]
+                catalogo_texto = "\n".join(lineas)
+        except Exception as e:
+            print(f"⚠️ Error al leer catalog.json: {e}")
 
-    # Configuración por defecto de Smoke Studios
+    # 2. Respaldar con la base de datos si catalog.json no estuvo disponible
+    if not catalogo_texto:
+        db = SessionLocal()
+        try:
+            negocio = db.query(NegocioConfig).first()
+            if negocio:
+                productos = db.query(Producto).filter(Producto.negocio_id == negocio.id).all()
+                if productos:
+                    catalogo_texto = "\n".join([
+                        f"- {p.nombre} (SKU: {p.sku}): ${p.precio:,.0f} CLP | Categoría: {p.categoria}"
+                        for p in productos
+                    ])
+        except Exception as e:
+            print(f"⚠️ Error leyendo base local: {e}")
+        finally:
+            db.close()
+
     return {
-        "nombre_negocio": "Smoke Studios",
-        "persona_ia": "Ejecutivo Comercial Virtual",
+        "nombre_negocio": "Ferretería Don Tito",
+        "persona_ia": "Asistente Virtual de Ferretería Don Tito",
         "reglas_atencion": (
-            "1. Eres un consultor tecnológico experto, amable y transparente.\n"
-            "2. Responde sobre desarrollo web Next.js, agentes IA, dashboards en Supabase y flujos n8n.\n"
-            "3. Ofrece agendar reuniones demostrativas o de levantamiento técnico según la disponibilidad.\n"
-            "4. Si el cliente solicita cotización a medida, descuento o hablar con una persona, deriva al contacto humano."
+            "1. Eres un vendedor experto, atento y servicial de Ferretería Don Tito.\n"
+            "2. Responde con precisión sobre la disponibilidad, precio y categoría de los productos según el catálogo cargado.\n"
+            "3. Si el cliente pregunta por un artículo (ejemplo: martillos, taladros, tubos, etc.), verifica la lista y da la información exacta.\n"
+            "4. Si solicitan cotizaciones especiales, descuentos al por mayor o hablar con un encargado, deriva al contacto humano."
         ),
         "telefono_contacto": CONTACTO_HUMANO,
-        "catalogo_texto": (
-            "- Desarrollo Web Next.js 15: Desde $490.000 CLP | Entrega rápida y SEO optimizado\n"
-            "- Agente IA WhatsApp 24/7: Desde $350.000 CLP | Integrado a Supabase y CRM\n"
-            "- Automatización n8n / Make: Desde $180.000 CLP | Conexión de formularios y pagos\n"
-            "- Dashboard Privado Smoke Studios: Incluido con el servicio de IA"
-        )
+        "catalogo_texto": catalogo_texto or "No hay productos registrados en el catálogo en este momento."
     }
 
 
@@ -253,10 +259,10 @@ def send_whatsapp_message(recipient, text):
 
 def ask_agent(user_text: str, telefono_cliente: str, nombre_cliente: str = "Cliente") -> str:
     """Consulta a Gemini API usando la SDK oficial `google-genai`."""
-    gemini_key = os.environ.get("GEMINI_API_KEY")
+    gemini_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     if not gemini_key:
-        print("❌ Error: GEMINI_API_KEY no está definida en las variables de entorno.")
-        return "Hola, estamos experimentando un problema de configuración temporal. Un ejecutivo se pondrá en contacto contigo a la brevedad."
+        print("❌ Error: Ni GEMINI_API_KEY ni GOOGLE_API_KEY están definidas en las variables de entorno.")
+        return "Hola, un momento por favor. Estamos procesando tu consulta y un ejecutivo te contactará en breve."
 
     datos = obtener_datos_negocio()
     contexto = obtener_contexto_horario()
@@ -284,24 +290,25 @@ Contexto operativo: [{contexto}]
 Disponibilidad en Google Calendar (si aplica a la consulta):
 {info_agenda if info_agenda else 'Sin consultas directas a la agenda en este turno.'}
 
-Soluciones y servicios disponibles en base de datos / catálogo:
+Catálogo y productos disponibles:
 {datos['catalogo_texto']}
 
 Mensaje del cliente ({nombre_cliente} - Teléfono: {telefono_cliente}): {user_text}
 
 Instrucciones de respuesta:
-1. Responde en tono profesional, claro y estructurado para WhatsApp.
-2. Si el cliente solicita catálogo o listado de varios productos, detalla cada uno de forma clara en viñetas sin escatimar información.
-3. Si el cliente solicita agendar una reunión o demo, utiliza la disponibilidad informada. Si hay un bloque disponible propónselo formalmente.
+1. Responde de manera profesional, amigable y estructurada para WhatsApp.
+2. Si el cliente consulta por disponibilidad, precios o herramientas específicas, revisa el catálogo y detalla precio y stock.
+3. Si el cliente solicita agendar una reunión o consulta presencial, utiliza la disponibilidad informada.
 """
 
-    modelos_a_probar = ["gemini-2.5-flash", "gemini-1.5-flash"]
+    modelos_a_probar = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
 
     try:
         client = genai.Client(api_key=gemini_key)
         
         for modelo in modelos_a_probar:
             try:
+                print(f"🔄 Intentando consulta con modelo: {modelo}...")
                 response = client.models.generate_content(
                     model=modelo,
                     contents=prompt,
@@ -315,19 +322,19 @@ Instrucciones de respuesta:
                     guardar_historial(telefono_cliente, "bot", respuesta)
                     return respuesta
             except Exception as e_mod:
-                print(f"⚠️ Falló consulta con modelo {modelo}: {e_mod}")
+                print(f"⚠️ Falló consulta con modelo {modelo}: {type(e_mod).__name__} - {e_mod}")
 
     except Exception as e:
-        print(f"❌ Error inicializando cliente Google GenAI: {e}")
+        print(f"❌ Error inicializando cliente Google GenAI: {type(e).__name__} - {e}")
 
-    print("❌ Error: Ningún modelo de Gemini respondió con éxito.")
+    print("❌ Error crítico: Ningún modelo de Gemini respondió con éxito.")
     return "Hola, un momento por favor. Estamos procesando tu consulta y un ejecutivo te contactará en breve."
 
 
 # ------------------------------------------------------------------------------
 # 4. Servidor Webhook FastAPI
 # ------------------------------------------------------------------------------
-app = FastAPI(title="Smoke Studios - WhatsApp Agent API")
+app = FastAPI(title="Ferretería Don Tito - WhatsApp Agent API")
 
 class MensajeManualRequest(BaseModel):
     telefono: str
@@ -335,7 +342,7 @@ class MensajeManualRequest(BaseModel):
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "service": "Smoke Studios Bot"}
+    return {"status": "ok", "service": "Don Tito Ferreteria Bot"}
 
 @app.get("/webhook")
 def verify_webhook(request: Request):

@@ -13,13 +13,8 @@ from database import SessionLocal, NegocioConfig, Producto, HistorialMensaje, si
 # ------------------------------------------------------------------------------
 # 1. Configuración de Variables de Entorno y Google Calendar
 # ------------------------------------------------------------------------------
-GEMINI_API_KEY = os.environ.get(
-    "GEMINI_API_KEY", "AQ.Ab8RN6Kgnd0mzuoF1_SSh735CY_Q8_e00DY_RJJYOxz1VmFx3w"
-)
-WHATSAPP_TOKEN = os.environ.get(
-    "WHATSAPP_TOKEN",
-    "EAAeol1PvNZAIBSrfP62tK2YzT7UhaukOY6wlSSdewForp4QGWdr08KZCETq7G66ko94oCuAkNcJkmFVn5YZCR4htYu6snqSGSrnlOUo0idFZAZAR3Klq3VFtqmTxPlezU5fme6TZAGyjMh8rQObUjRcPLr5QXpZBiiekZCtrMLImSZCccV9fGLmmnaxdIotVtZAnVcZBzO3pJXKJmfFwzvkED4VIT78QL0i4NNm1fak111XrLRWR2wO8MqByEBz65TsmxFDv4QZAGPt9WM8amAy4YgrjegZDZD"
-)
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+WHATSAPP_TOKEN = os.environ.get("WHATSAPP_TOKEN")
 PHONE_NUMBER_ID = os.environ.get("PHONE_NUMBER_ID", "1293789687158465")
 VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN", "don_tito_ferreteria_secret_token")
 CONTACTO_HUMANO = os.environ.get("CONTACTO_HUMANO", "+56939270181")
@@ -229,8 +224,12 @@ def detectar_solicitud_humana(texto: str) -> bool:
 # ------------------------------------------------------------------------------
 def send_whatsapp_message(recipient, text):
     """Envía el mensaje de texto al usuario por WhatsApp Cloud API."""
-    token = os.environ.get("WHATSAPP_TOKEN", WHATSAPP_TOKEN)
+    token = os.environ.get("WHATSAPP_TOKEN")
     phone_id = os.environ.get("PHONE_NUMBER_ID", PHONE_NUMBER_ID)
+
+    if not token:
+        print("❌ Error: WHATSAPP_TOKEN no está definido en las variables de entorno.")
+        return
 
     url = f"https://graph.facebook.com/v20.0/{phone_id}/messages"
     headers = {
@@ -252,7 +251,11 @@ def send_whatsapp_message(recipient, text):
 
 def ask_agent(user_text: str, telefono_cliente: str, nombre_cliente: str = "Cliente") -> str:
     """Consulta a Gemini 2.5 Flash incorporando la información en tiempo real de Google Calendar."""
-    gemini_key = os.environ.get("GEMINI_API_KEY", GEMINI_API_KEY)
+    gemini_key = os.environ.get("GEMINI_API_KEY")
+    if not gemini_key:
+        print("❌ Error: GEMINI_API_KEY no está definida en las variables de entorno.")
+        return "Hola, estamos experimentando un problema de configuración temporal. Un ejecutivo se pondrá en contacto contigo a la brevedad."
+
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
 
     datos = obtener_datos_negocio()
@@ -296,7 +299,7 @@ Instrucciones de respuesta:
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
             "temperature": 0.3,
-            "maxOutputTokens": 1200  # Holgura asegurada para hasta 10 productos detallados
+            "maxOutputTokens": 1200  # Holgura asegurada para respuestas detalladas
         }
     }
     headers = {"Content-Type": "application/json"}

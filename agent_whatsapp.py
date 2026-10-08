@@ -250,13 +250,11 @@ def send_whatsapp_message(recipient, text):
 
 
 def ask_agent(user_text: str, telefono_cliente: str, nombre_cliente: str = "Cliente") -> str:
-    """Consulta a Gemini 2.5 Flash incorporando la información en tiempo real de Google Calendar."""
+    """Consulta a Gemini API incorporando la información en tiempo real de Google Calendar."""
     gemini_key = os.environ.get("GEMINI_API_KEY")
     if not gemini_key:
         print("❌ Error: GEMINI_API_KEY no está definida en las variables de entorno.")
         return "Hola, estamos experimentando un problema de configuración temporal. Un ejecutivo se pondrá en contacto contigo a la brevedad."
-
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
 
     datos = obtener_datos_negocio()
     contexto = obtener_contexto_horario()
@@ -299,24 +297,30 @@ Instrucciones de respuesta:
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
             "temperature": 0.3,
-            "maxOutputTokens": 1200  # Holgura asegurada para respuestas detalladas
+            "maxOutputTokens": 1200
         }
     }
     headers = {"Content-Type": "application/json"}
 
-    try:
-        r = requests.post(url, json=payload, headers=headers, timeout=12)
-        if r.status_code == 200:
-            data = r.json()
-            respuesta = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-            guardar_historial(telefono_cliente, "bot", respuesta)
-            return respuesta
-        else:
-            print(f"❌ Error de Gemini API ({r.status_code}): {r.text}")
-            return "Hola, un momento por favor. Estamos procesando tu consulta y un ejecutivo te contactará en breve."
-    except Exception as e:
-        print(f"❌ Excepción al conectar con Gemini: {e}")
-        return "Hola, gracias por escribir a Smoke Studios. Registramos tu mensaje y nos pondremos en contacto contigo pronto."
+    # Lista de modelos compatibles para intentar en orden
+    modelos = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"]
+
+    for mod in modelos:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{mod}:generateContent?key={gemini_key}"
+        try:
+            r = requests.post(url, json=payload, headers=headers, timeout=12)
+            if r.status_code == 200:
+                data = r.json()
+                respuesta = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                guardar_historial(telefono_cliente, "bot", respuesta)
+                return respuesta
+            else:
+                print(f"⚠️ Modelo {mod} devolvió código {r.status_code}: {r.text}")
+        except Exception as e:
+            print(f"⚠️ Excepción consultando modelo {mod}: {e}")
+
+    print("❌ Error: Ningún modelo de Gemini respondió con éxito.")
+    return "Hola, un momento por favor. Estamos procesando tu consulta y un ejecutivo te contactará en breve."
 
 
 # ------------------------------------------------------------------------------

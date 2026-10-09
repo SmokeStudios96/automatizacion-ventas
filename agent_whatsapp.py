@@ -273,26 +273,29 @@ INSTRUCCIONES DE RESPUESTA:
                 args = call.args or {}
                 
                 res_tool = ""
-                if nombre_fn == "agregar_al_carrito":
-                    sku_solicitado = args.get("sku", "")
-                    # Validación robusta de SKU si el modelo lo deja vacío
-                    if not sku_solicitado or "martillo" in user_text.lower():
-                        sku_solicitado = "HER-010"
-                    elif "taladro" in user_text.lower():
-                        sku_solicitado = "HER-012"
+                try:
+                    if nombre_fn == "agregar_al_carrito":
+                        sku_solicitado = args.get("sku", "")
+                        if not sku_solicitado or "martillo" in user_text.lower():
+                            sku_solicitado = "HER-010"
+                        elif "taladro" in user_text.lower():
+                            sku_solicitado = "HER-012"
 
-                    res_tool = agregar_al_carrito(
-                        telefono_cliente=clean_phone,
-                        sku=sku_solicitado,
-                        cantidad=int(args.get("cantidad", 1))
-                    )
-                elif nombre_fn == "ver_carrito":
-                    res_tool = ver_carrito(telefono_cliente=clean_phone)
-                elif nombre_fn == "procesar_cierre_pedido":
-                    res_tool = procesar_cierre_pedido(
-                        telefono_cliente=clean_phone,
-                        nombre_cliente=nombre_cliente
-                    )
+                        res_tool = agregar_al_carrito(
+                            telefono_cliente=clean_phone,
+                            sku=sku_solicitado,
+                            cantidad=int(args.get("cantidad", 1))
+                        )
+                    elif nombre_fn == "ver_carrito":
+                        res_tool = ver_carrito(telefono_cliente=clean_phone)
+                    elif nombre_fn == "procesar_cierre_pedido":
+                        res_tool = procesar_cierre_pedido(
+                            telefono_cliente=clean_phone,
+                            nombre_cliente=nombre_cliente
+                        )
+                except Exception as tool_err:
+                    print(f"❌ Error ejecutando la herramienta {nombre_fn}: {tool_err}")
+                    res_tool = "Disculpa, tuve un pequeño problema técnico al gestionar tu solicitud en el carrito, pero ya lo estoy revisando."
                 
                 if res_tool:
                     guardar_historial(clean_phone, "bot", res_tool)
@@ -355,7 +358,6 @@ def procesar_mensaje_en_segundo_plano(msg_id: str, from_number: str, text_body: 
     except Exception as e:
         print(f"❌ Error en segundo plano: {e}")
     finally:
-        # Limpieza opcional o almacenamiento del ID procesado
         if len(processed_message_ids) > 500:
             processed_message_ids.clear()
 
@@ -376,7 +378,6 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
                     msg = messages[0]
                     msg_id = msg.get("id", "")
                     
-                    # CONTROL DE IDEMPOTENCIA: Si el mensaje ya fue procesado, se ignora de inmediato
                     if msg_id in processed_message_ids:
                         print(f"⚠️ [Webhook] Mensaje duplicado detectado y descartado (ID: {msg_id})")
                         return {"status": "ignored_duplicate"}
@@ -391,7 +392,6 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
                         text_body = msg.get("text", {}).get("body", "")
                         print(f"\n📩 [WhatsApp de {nombre} ({from_number})]: {text_body}")
 
-                        # Respondemos 200 OK a Meta inmediatamente y procesamos asíncronamente
                         background_tasks.add_task(
                             procesar_mensaje_en_segundo_plano,
                             msg_id,

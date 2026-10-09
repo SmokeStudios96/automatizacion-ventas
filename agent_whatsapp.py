@@ -8,16 +8,21 @@ from fastapi import FastAPI, Request, Response
 from pydantic import BaseModel
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
-from google import genai
-from google.genai import types
+
+from agno.agent import Agent
+from agno.models.google import Gemini
 
 from database import SessionLocal, NegocioConfig, Producto, HistorialMensaje, sincronizar_chat_supabase
+from cart_tool import agregar_al_carrito, ver_carrito, procesar_cierre_pedido
 
 # ------------------------------------------------------------------------------
 # 1. Configuración de Variables de Entorno y Google Calendar
 # ------------------------------------------------------------------------------
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-WHATSAPP_TOKEN = os.environ.get("WHATSAPP_TOKEN")
+API_KEY_GEMINI = os.environ.get("GEMINI_API_KEY") or os.environ.get("GEMINI_APT_KEY") or ""
+os.environ["GOOGLE_API_KEY"] = API_KEY_GEMINI
+os.environ["GEMINI_API_KEY"] = API_KEY_GEMINI
+
+WHATSAPP_TOKEN = os.environ.get("WHATSAPP_TOKEN", "")
 WHATSAPP_PHONE_ID = os.environ.get("WHATSAPP_PHONE_ID") or os.environ.get("PHONE_NUMBER_ID", "1293789687158465")
 VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN", "don_tito_ferreteria_secret_token")
 CONTACTO_HUMANO = os.environ.get("CONTACTO_HUMANO", "+56939270181")
@@ -37,16 +42,13 @@ VENTANA_TIEMPO_SEG = 30
 def get_calendar_service():
     """Autentica y retorna la instancia del servicio de Google Calendar."""
     if not os.path.exists(CREDENTIALS_FILE):
-        print(f"⚠️ Archivo de credenciales '{CREDENTIALS_FILE}' no encontrado.")
         return None
     creds = Credentials.from_service_account_file(CREDENTIALS_FILE, scopes=SCOPES)
     return build("calendar", "v3", credentials=creds)
 
 
 def obtener_bloques_ocupados(fecha_str: str) -> str:
-    """
-    Consulta los eventos ocupados para una fecha específica (formato YYYY-MM-DD).
-    """
+    """Consulta los eventos ocupados para una fecha específica (formato YYYY-MM-DD)."""
     try:
         service = get_calendar_service()
         if not service or not GOOGLE_CALENDAR_ID:
@@ -72,8 +74,6 @@ def obtener_bloques_ocupados(fecha_str: str) -> str:
             inicio = event["start"].get("dateTime", event["start"].get("date"))
             fin = event["end"].get("dateTime", event["end"].get("date"))
             resumen = event.get("summary", "Ocupado")
-            
-            # Formatear horas si viene en formato completo ISO
             if "T" in inicio:
                 inicio_h = inicio.split("T")[1][:5]
                 fin_h = fin.split("T")[1][:5]
@@ -88,10 +88,7 @@ def obtener_bloques_ocupados(fecha_str: str) -> str:
 
 
 def agendar_cita_calendar(resumen: str, inicio_iso: str, fin_iso: str, descripcion: str = "") -> str:
-    """
-    Agenda una cita directamente en Google Calendar.
-    - inicio_iso / fin_iso formato: "YYYY-MM-DDTHH:MM:SS-03:00"
-    """
+    """Agenda una cita directamente en Google Calendar (ISO: YYYY-MM-DDTHH:MM:SS-03:00)."""
     try:
         service = get_calendar_service()
         if not service or not GOOGLE_CALENDAR_ID:
@@ -115,79 +112,101 @@ def agendar_cita_calendar(resumen: str, inicio_iso: str, fin_iso: str, descripci
 
 
 # ------------------------------------------------------------------------------
-# 2. Utilidades del Negocio, Historial y Rate Limiter
+# 2. Carga de Catálogo y Horarios
 # ------------------------------------------------------------------------------
-def validar_mensaje_entrante(telefono: str, texto_mensaje: str) -> Tuple[bool, str]:
-    """Valida la longitud del mensaje y aplica Rate Limiting por número de teléfono."""
-    ahora = time.time()
-    
-    if len(texto_mensaje) > MAX_CARACTERES_ENTRADA:
-        return False, "Tu mensaje es muy extenso. Por favor, envía una consulta más breve para ayudarte de inmediato."
-    
-    if telefono not in user_message_history:
-        user_message_history[telefono] = []
-        
-    user_message_history[telefono] = [
-        t for t in user_message_history[telefono] if ahora - t < VENTANA_TIEMPO_SEG
-    ]
-    
-    if len(user_message_history[telefono]) >= MAX_MENSAJES_RAFAGA:
-        return False, "Has enviado varios mensajes muy rápido. Por favor, aguarda unos segundos antes de escribir de nuevo."
-        
-    user_message_history[telefono].append(ahora)
-    return True, ""
-
-
-def obtener_datos_negocio():
-    """Retorna los datos del negocio cargando prioritariamente catalog.json si está disponible."""
-    catalogo_texto = ""
-    
-    # 1. Intentar cargar el catálogo desde catalog.json
+def obtener_catalogo_texto() -> str:
+    """Carga prioritariamente catalog.json y respalda con la base de datos."""
     if os.path.exists("catalog.json"):
         try:
             with open("catalog.json", "r", encoding="utf-8") as f:
                 productos = json.load(f)
-                lineas = [
-                    f"- {p.get('nombre')} (SKU: {p.get('sku')}): ${p.get('precio'):,} CLP | Stock: {p.get('stock')} | Categoría: {p.get('categoria')}"
+                return "\n".join([
+                    f"- {p.get('nombre')} (SKU: {p.get('sku')}): ${p.get('precio'):,} CLP | Stock: {p.get('stock')} un | Categoría: {p.get('categoria')}"
                     for p in productos
-                ]
-                catalogo_texto = "\n".join(lineas)
+                ])
         except Exception as e:
             print(f"⚠️ Error al leer catalog.json: {e}")
 
-    # 2. Respaldar con la base de datos si catalog.json no estuvo disponible
-    if not catalogo_texto:
-        db = SessionLocal()
-        try:
-            negocio = db.query(NegocioConfig).first()
-            if negocio:
-                productos = db.query(Producto).filter(Producto.negocio_id == negocio.id).all()
-                if productos:
-                    catalogo_texto = "\n".join([
-                        f"- {p.nombre} (SKU: {p.sku}): ${p.precio:,.0f} CLP | Categoría: {p.categoria}"
-                        for p in productos
-                    ])
-        except Exception as e:
-            print(f"⚠️ Error leyendo base local: {e}")
-        finally:
-            db.close()
+    db = SessionLocal()
+    try:
+        negocio = db.query(NegocioConfig).first()
+        if negocio:
+            productos = db.query(Producto).filter(Producto.negocio_id == negocio.id).all()
+            if productos:
+                return "\n".join([
+                    f"- {p.nombre} (SKU: {p.sku}): ${p.precio:,.0f} CLP | Categoría: {p.categoria}"
+                    for p in productos
+                ])
+    except Exception as e:
+        print(f"⚠️ Error leyendo base local: {e}")
+    finally:
+        db.close()
 
-    return {
-        "nombre_negocio": "Ferretería Don Tito",
-        "persona_ia": "Asistente Virtual de Ferretería Don Tito",
-        "reglas_atencion": (
-            "1. Eres un vendedor experto, atento y servicial de Ferretería Don Tito.\n"
-            "2. Responde con precisión sobre la disponibilidad, precio y categoría de los productos según el catálogo cargado.\n"
-            "3. Si el cliente pregunta por un artículo (ejemplo: martillos, taladros, tubos, etc.), verifica la lista y da la información exacta.\n"
-            "4. Si solicitan cotizaciones especiales, descuentos al por mayor o hablar con un encargado, deriva al contacto humano."
-        ),
-        "telefono_contacto": CONTACTO_HUMANO,
-        "catalogo_texto": catalogo_texto or "No hay productos registrados en el catálogo en este momento."
-    }
+    return "No hay productos registrados en el catálogo en este momento."
+
+
+def obtener_contexto_horario():
+    tz_chile = timezone(timedelta(hours=-3))
+    ahora = datetime.now(tz_chile)
+
+    dias_semana = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+    dia_str = dias_semana[ahora.weekday()]
+    fecha_iso = ahora.strftime("%Y-%m-%d")
+    hora_str = ahora.strftime("%H:%M")
+
+    es_domingo = ahora.weekday() == 6
+    hora_decimal = ahora.hour + ahora.minute / 60.0
+    esta_abierto = (not es_domingo) and ((8.5 <= hora_decimal < 13.0) or (14.5 <= hora_decimal < 18.5))
+
+    estado = "ABIERTO (atención presencial)" if esta_abierto else "CERRADO (fuera de horario de atención)"
+    return f"Momento actual: {dia_str} {fecha_iso} a las {hora_str} hrs. Estado: {estado}."
+
+
+# ------------------------------------------------------------------------------
+# 3. Inicialización del Agente Agno (Don Tito)
+# ------------------------------------------------------------------------------
+catalog_text = obtener_catalogo_texto()
+
+don_tito_agent = Agent(
+    model=Gemini(
+        id="gemini-3.8-flash",
+        api_key=API_KEY_GEMINI
+    ),
+    description="Eres Don Tito, un ferretero experto, amable y directo de Chiloé.",
+    instructions=[
+        "Eres claro, preciso y directo al responder sobre productos, precios y stock.",
+        "No hagas ofertas excesivas ni intentes vender de forma pesada; entrega el dato exacto.",
+        "Si un producto no está disponible o no existe en el catálogo, sugiere solo una alternativa muy cercana y puntual.",
+        f"Si el cliente pide compras al por mayor, descuentos por volumen, productos fuera de catálogo o solicita hablar con un humano, deriva al {CONTACTO_HUMANO}.",
+        "REGLA DE HORARIO: Revisa siempre el contexto de fecha/hora entregado. Si el estado es CERRADO, saluda, responde la duda sobre el catálogo, pero advierte amablemente al cliente que el local se encuentra cerrado en este momento.",
+        "GESTIÓN DE CARRITO Y COMPRAS:",
+        "- Cuando el cliente quiera agregar un producto, utiliza la función 'agregar_al_carrito'.",
+        "- Si el cliente pregunta qué tiene en su carrito o quiere ver el total, utiliza 'ver_carrito'.",
+        "- Cuando el cliente confirme que desea finalizar/cerrar el pedido o realizar la compra, invoca 'procesar_cierre_pedido'.",
+        f"Catálogo de productos disponibles en tienda:\n{catalog_text}"
+    ],
+    tools=[agregar_al_carrito, ver_carrito, procesar_cierre_pedido],
+    markdown=False,
+)
+
+
+# ------------------------------------------------------------------------------
+# 4. Funciones Auxiliares, Rate Limiting y WhatsApp API
+# ------------------------------------------------------------------------------
+def validar_mensaje_entrante(telefono: str, texto_mensaje: str) -> Tuple[bool, str]:
+    ahora = time.time()
+    if len(texto_mensaje) > MAX_CARACTERES_ENTRADA:
+        return False, "Tu mensaje es muy extenso. Por favor, envía una consulta más breve."
+    if telefono not in user_message_history:
+        user_message_history[telefono] = []
+    user_message_history[telefono] = [t for t in user_message_history[telefono] if ahora - t < VENTANA_TIEMPO_SEG]
+    if len(user_message_history[telefono]) >= MAX_MENSAJES_RAFAGA:
+        return False, "Has enviado varios mensajes muy rápido. Por favor, aguarda unos segundos."
+    user_message_history[telefono].append(ahora)
+    return True, ""
 
 
 def guardar_historial(telefono: str, remitente: str, mensaje: str):
-    """Guarda el mensaje en PostgreSQL."""
     db = SessionLocal()
     try:
         nuevo = HistorialMensaje(cliente_telefono=telefono, remitente=remitente, mensaje=mensaje)
@@ -199,44 +218,17 @@ def guardar_historial(telefono: str, remitente: str, mensaje: str):
         db.close()
 
 
-def obtener_contexto_horario():
-    """Calcula el horario para Chile Continental (UTC-3)."""
-    tz_chile = timezone(timedelta(hours=-3))
-    ahora = datetime.now(tz_chile)
-
-    dias_semana = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
-    dia_str = dias_semana[ahora.weekday()]
-    fecha_iso = ahora.strftime("%Y-%m-%d")
-    hora_str = ahora.strftime("%H:%M")
-
-    es_dia_laboral = ahora.weekday() < 5
-    hora_decimal = ahora.hour + ahora.minute / 60.0
-    esta_abierto = es_dia_laboral and (9.0 <= hora_decimal < 18.5)
-
-    estado = "HORARIO COMERCIAL ACTIVO" if esta_abierto else "FUERA DE HORARIO COMERCIAL (Atención 24/7)"
-    return f"Fecha actual: {fecha_iso} ({dia_str}). Hora actual: {hora_str} hrs. Estado: {estado}."
-
-
 def detectar_solicitud_humana(texto: str) -> bool:
-    """Verifica si el usuario solicitó explícitamente a un agente humano."""
-    terminos = [
-        "humano", "persona", "ejecutivo", "asesor", "hablar con alguien",
-        "llámame", "llamada", "reunión", "descuento", "cotización personalizada"
-    ]
-    t = texto.lower()
-    return any(term in t for term in terminos)
+    terminos = ["humano", "persona", "ejecutivo", "asesor", "hablar con alguien", "llámame", "llamada", "descuento"]
+    return any(term in texto.lower() for term in terminos)
 
 
-# ------------------------------------------------------------------------------
-# 3. Envío a WhatsApp y Consulta a Gemini con Calendar
-# ------------------------------------------------------------------------------
-def send_whatsapp_message(recipient, text):
-    """Envía el mensaje de texto al usuario por WhatsApp Cloud API."""
-    token = os.environ.get("WHATSAPP_TOKEN")
+def send_whatsapp_message(recipient: str, text: str):
+    token = os.environ.get("WHATSAPP_TOKEN", WHATSAPP_TOKEN)
     phone_id = os.environ.get("WHATSAPP_PHONE_ID") or os.environ.get("PHONE_NUMBER_ID", WHATSAPP_PHONE_ID)
 
-    if not token:
-        print("❌ Error: WHATSAPP_TOKEN no está definido en las variables de entorno.")
+    if not token or not phone_id:
+        print("❌ Error: WHATSAPP_TOKEN o WHATSAPP_PHONE_ID faltante.")
         return
 
     url = f"https://graph.facebook.com/v20.0/{phone_id}/messages"
@@ -252,87 +244,53 @@ def send_whatsapp_message(recipient, text):
         "text": {"body": text},
     }
 
-    resp = requests.post(url, json=payload, headers=headers)
-    if resp.status_code != 200:
-        print(f"❌ Error al enviar mensaje por Meta ({resp.status_code}): {resp.text}")
+    try:
+        resp = requests.post(url, json=payload, headers=headers)
+        if resp.status_code != 200:
+            print(f"❌ Error al enviar mensaje por Meta ({resp.status_code}): {resp.text}")
+    except Exception as e:
+        print(f"❌ Error enviando mensaje a WhatsApp: {e}")
 
 
 def ask_agent(user_text: str, telefono_cliente: str, nombre_cliente: str = "Cliente") -> str:
-    """Consulta a Gemini API usando la SDK oficial `google-genai`."""
-    gemini_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-    if not gemini_key:
-        print("❌ Error: Ni GEMINI_API_KEY ni GOOGLE_API_KEY están definidas en las variables de entorno.")
-        return "Hola, un momento por favor. Estamos procesando tu consulta y un ejecutivo te contactará en breve."
-
-    datos = obtener_datos_negocio()
-    contexto = obtener_contexto_horario()
-
-    texto_lower = user_text.lower()
-    info_agenda = ""
-    
-    tz_chile = timezone(timedelta(hours=-3))
-    hoy = datetime.now(tz_chile)
-    
-    if "mañana" in texto_lower:
-        fecha_consulta = (hoy + timedelta(days=1)).strftime("%Y-%m-%d")
-        info_agenda = obtener_bloques_ocupados(fecha_consulta)
-    elif any(kw in texto_lower for kw in ["hoy", "agendar", "reunion", "cita", "hora"]):
-        fecha_consulta = hoy.strftime("%Y-%m-%d")
-        info_agenda = obtener_bloques_ocupados(fecha_consulta)
-
-    prompt = f"""Eres {datos['persona_ia']} de {datos['nombre_negocio']}.
-Reglas de atención:
-{datos['reglas_atencion']}
-Contacto de derivación humana: {datos['telefono_contacto']}.
-
-Contexto operativo: [{contexto}]
-
-Disponibilidad en Google Calendar (si aplica a la consulta):
-{info_agenda if info_agenda else 'Sin consultas directas a la agenda en este turno.'}
-
-Catálogo y productos disponibles:
-{datos['catalogo_texto']}
-
-Mensaje del cliente ({nombre_cliente} - Teléfono: {telefono_cliente}): {user_text}
-
-Instrucciones de respuesta:
-1. Responde de manera profesional, amigable y estructurada para WhatsApp.
-2. Si el cliente consulta por disponibilidad, precios o herramientas específicas, revisa el catálogo y detalla precio y stock.
-3. Si el cliente solicita agendar una reunión o consulta presencial, utiliza la disponibilidad informada.
-"""
-
-    modelos_a_probar = ["gemini-3.8-flash"]
-
+    """Procesa la respuesta utilizando Agno Agent."""
     try:
-        client = genai.Client(api_key=gemini_key)
+        contexto = obtener_contexto_horario()
+        clean_phone = telefono_cliente.replace("+", "").strip()
+
+        # Revisar si pregunta por agendamiento/agenda
+        texto_lower = user_text.lower()
+        info_agenda = ""
+        tz_chile = timezone(timedelta(hours=-3))
+        hoy = datetime.now(tz_chile)
         
-        for modelo in modelos_a_probar:
-            try:
-                print(f"🔄 Intentando consulta con modelo: {modelo}...")
-                response = client.models.generate_content(
-                    model=modelo,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        temperature=0.3,
-                        max_output_tokens=1200
-                    )
-                )
-                if response and response.text:
-                    respuesta = response.text.strip()
-                    guardar_historial(telefono_cliente, "bot", respuesta)
-                    return respuesta
-            except Exception as e_mod:
-                print(f"⚠️ Falló consulta con modelo {modelo}: {type(e_mod).__name__} - {e_mod}")
+        if "mañana" in texto_lower:
+            fecha_consulta = (hoy + timedelta(days=1)).strftime("%Y-%m-%d")
+            info_agenda = obtener_bloques_ocupados(fecha_consulta)
+        elif any(kw in texto_lower for kw in ["hoy", "agendar", "reunion", "cita", "hora"]):
+            fecha_consulta = hoy.strftime("%Y-%m-%d")
+            info_agenda = obtener_bloques_ocupados(fecha_consulta)
+
+        prompt_completo = (
+            f"[{contexto}]\n"
+            f"[Disponibilidad Google Calendar: {info_agenda if info_agenda else 'N/A'}]\n"
+            f"[Cliente Nombre: {nombre_cliente} | Teléfono: {clean_phone}]\n"
+            f"Mensaje del cliente: {user_text}"
+        )
+
+        response = don_tito_agent.run(prompt_completo)
+        respuesta = response.content.strip()
+        
+        guardar_historial(clean_phone, "bot", respuesta)
+        return respuesta
 
     except Exception as e:
-        print(f"❌ Error inicializando cliente Google GenAI: {type(e).__name__} - {e}")
-
-    print("❌ Error crítico: Ningún modelo de Gemini respondió con éxito.")
-    return "Hola, un momento por favor. Estamos procesando tu consulta y un ejecutivo te contactará en breve."
+        print(f"❌ Error procesando con Agno Agent: {e}")
+        return "Hola, un momento por favor. Estamos procesando tu consulta y un ejecutivo te contactará en breve."
 
 
 # ------------------------------------------------------------------------------
-# 4. Servidor Webhook FastAPI
+# 5. Servidor Webhook FastAPI e Integración con Dashboard
 # ------------------------------------------------------------------------------
 app = FastAPI(title="Ferretería Don Tito - WhatsApp Agent API")
 
@@ -342,7 +300,7 @@ class MensajeManualRequest(BaseModel):
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "service": "Don Tito Ferreteria Bot"}
+    return {"status": "ok", "service": "Don Tito Ferreteria Bot (Agno Agent + Dashboard)"}
 
 @app.get("/webhook")
 def verify_webhook(request: Request):
@@ -366,7 +324,8 @@ async def whatsapp_webhook(request: Request):
 
                 if messages:
                     msg = messages[0]
-                    from_number = msg.get("from")
+                    raw_phone = msg.get("from", "")
+                    from_number = raw_phone.replace("+", "").strip()
                     nombre = contacts[0].get("profile", {}).get("name", "Cliente") if contacts else "Cliente"
 
                     if msg.get("type") == "text":
@@ -385,7 +344,7 @@ async def whatsapp_webhook(request: Request):
                         # 3. Evaluar intención de escalación
                         requiere_humano = detectar_solicitud_humana(text_body)
 
-                        # 4. Sincronizar en tiempo real con Supabase (para Dashboard Next.js)
+                        # 4. Sincronizar en tiempo real con Supabase (para Dashboard Smoke Studios)
                         sincronizar_chat_supabase(
                             telefono=from_number,
                             cliente_nombre=nombre,
@@ -393,7 +352,7 @@ async def whatsapp_webhook(request: Request):
                             requiere_humano=requiere_humano
                         )
 
-                        # 5. Generar respuesta con IA y enviar
+                        # 5. Generar respuesta con Agno Agent y enviar por WhatsApp
                         reply = ask_agent(text_body, from_number, nombre)
                         send_whatsapp_message(from_number, reply)
                         print(f"🤖 [Respuesta Enviada]: {reply}\n")
@@ -408,15 +367,12 @@ async def whatsapp_webhook(request: Request):
 @app.post("/api/send-message")
 async def enviar_mensaje_manual(data: MensajeManualRequest):
     try:
-        # 1. Enviar el mensaje a través de Meta Cloud API
-        send_whatsapp_message(data.telefono, data.mensaje)
+        clean_phone = data.telefono.replace("+", "").strip()
+        send_whatsapp_message(clean_phone, data.mensaje)
+        guardar_historial(clean_phone, "operador", data.mensaje)
         
-        # 2. Registrar en la base de datos como enviado por el operador humano
-        guardar_historial(data.telefono, "operador", data.mensaje)
-        
-        # 3. Sincronizar con Supabase para mantener la vista actualizada
         sincronizar_chat_supabase(
-            telefono=data.telefono,
+            telefono=clean_phone,
             cliente_nombre="Cliente",
             ultimo_mensaje=data.mensaje,
             requiere_humano=True
@@ -429,4 +385,4 @@ async def enviar_mensaje_manual(data: MensajeManualRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("agent_whatsapp:app", host="0.0.0.0", port=8001, reload=True)
+    uvicorn.run("agent_whatsapp:app", host="0.0.0.0", port=8000, reload=True)

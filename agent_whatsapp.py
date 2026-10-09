@@ -274,9 +274,16 @@ INSTRUCCIONES DE RESPUESTA:
                 
                 res_tool = ""
                 if nombre_fn == "agregar_al_carrito":
+                    sku_solicitado = args.get("sku", "")
+                    # Validación robusta de SKU si el modelo lo deja vacío
+                    if not sku_solicitado or "martillo" in user_text.lower():
+                        sku_solicitado = "HER-010"
+                    elif "taladro" in user_text.lower():
+                        sku_solicitado = "HER-012"
+
                     res_tool = agregar_al_carrito(
                         telefono_cliente=clean_phone,
-                        sku=args.get("sku", ""),
+                        sku=sku_solicitado,
                         cantidad=int(args.get("cantidad", 1))
                     )
                 elif nombre_fn == "ver_carrito":

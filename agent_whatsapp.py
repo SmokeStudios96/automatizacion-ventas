@@ -257,7 +257,7 @@ INSTRUCCIONES DE RESPUESTA:
         
         # Invocación directa a Gemini 3.5 Flash
         response = client.models.generate_content(
-            model="gemini-3.5-flash",
+            model="gemini-3.5-flash-lite",
             contents=prompt_sistema,
             config=types.GenerateContentConfig(
                 temperature=0.2,

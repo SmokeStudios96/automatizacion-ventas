@@ -2,7 +2,7 @@ import os
 import time
 import json
 import requests
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Set
 from datetime import datetime, timezone, timedelta
 from fastapi import FastAPI, Request, Response, BackgroundTasks
 from pydantic import BaseModel
@@ -27,8 +27,9 @@ GOOGLE_CALENDAR_ID = os.environ.get("GOOGLE_CALENDAR_ID")
 CREDENTIALS_FILE = "google_credentials.json"
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
-# Control de Rate Limiting en memoria por número de teléfono
+# Control de Rate Limiting e Idempotencia (Evitar duplicados de Meta)
 user_message_history: Dict[str, list] = {}
+processed_message_ids: Set[str] = set()
 MAX_CARACTERES_ENTRADA = 1000
 MAX_MENSAJES_RAFAGA = 5
 VENTANA_TIEMPO_SEG = 30
@@ -84,30 +85,6 @@ def obtener_bloques_ocupados(fecha_str: str) -> str:
     except Exception as e:
         print(f"❌ Error al consultar Calendar: {e}")
         return f"No se pudo consultar el calendario: {e}"
-
-
-def agendar_cita_calendar(resumen: str, inicio_iso: str, fin_iso: str, descripcion: str = "") -> str:
-    """Agenda una cita directamente en Google Calendar (ISO: YYYY-MM-DDTHH:MM:SS-03:00)."""
-    try:
-        service = get_calendar_service()
-        if not service or not GOOGLE_CALENDAR_ID:
-            return "No se pudo agendar: Calendario no configurado."
-
-        event = {
-            "summary": resumen,
-            "description": descripcion,
-            "start": {"dateTime": inicio_iso, "timeZone": "America/Santiago"},
-            "end": {"dateTime": fin_iso, "timeZone": "America/Santiago"},
-        }
-
-        created_event = service.events().insert(
-            calendarId=GOOGLE_CALENDAR_ID, body=event
-        ).execute()
-
-        return f"✅ Cita agendada con éxito. Confirmación: {created_event.get('htmlLink')}"
-    except Exception as e:
-        print(f"❌ Error al agendar en Calendar: {e}")
-        return f"Error al registrar la cita: {e}"
 
 
 # ------------------------------------------------------------------------------
@@ -237,7 +214,7 @@ def send_whatsapp_message(recipient: str, text: str):
 
 
 def ask_agent(user_text: str, telefono_cliente: str, nombre_cliente: str = "Cliente") -> str:
-    """Procesa la respuesta con Gemini SDK ejecutando Function Calling para el carrito si se requiere."""
+    """Procesa la respuesta con Gemini 3.5 Flash ejecutando Function Calling si se requiere."""
     gemini_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or GEMINI_API_KEY
     if not gemini_key:
         print("❌ Error: GEMINI_API_KEY no configurada.")
@@ -278,7 +255,7 @@ INSTRUCCIONES DE RESPUESTA:
     try:
         client = genai.Client(api_key=gemini_key)
         
-        # Invocación directa a Gemini 2.5 Flash
+        # Invocación directa a Gemini 3.5 Flash
         response = client.models.generate_content(
             model="gemini-3.5-flash",
             contents=prompt_sistema,
@@ -347,8 +324,8 @@ def verify_webhook(request: Request):
     return Response(content="Error de verificación", status_code=403)
 
 
-def procesar_mensaje_en_segundo_plano(from_number: str, text_body: str, nombre: str):
-    """Ejecuta el procesamiento en segundo plano sin congelar el Webhook de Meta."""
+def procesar_mensaje_en_segundo_plano(msg_id: str, from_number: str, text_body: str, nombre: str):
+    """Ejecuta el procesamiento en segundo plano con control de idempotencia."""
     try:
         es_valido, msj_error = validar_mensaje_entrante(from_number, text_body)
         if not es_valido:
@@ -370,6 +347,10 @@ def procesar_mensaje_en_segundo_plano(from_number: str, text_body: str, nombre: 
         print(f"🤖 [Respuesta Enviada a {from_number}]: {reply}\n")
     except Exception as e:
         print(f"❌ Error en segundo plano: {e}")
+    finally:
+        # Limpieza opcional o almacenamiento del ID procesado
+        if len(processed_message_ids) > 500:
+            processed_message_ids.clear()
 
 
 @app.post("/webhook")
@@ -386,6 +367,15 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
 
                 if messages:
                     msg = messages[0]
+                    msg_id = msg.get("id", "")
+                    
+                    # CONTROL DE IDEMPOTENCIA: Si el mensaje ya fue procesado, se ignora de inmediato
+                    if msg_id in processed_message_ids:
+                        print(f"⚠️ [Webhook] Mensaje duplicado detectado y descartado (ID: {msg_id})")
+                        return {"status": "ignored_duplicate"}
+
+                    processed_message_ids.add(msg_id)
+
                     raw_phone = msg.get("from", "")
                     from_number = raw_phone.replace("+", "").strip()
                     nombre = contacts[0].get("profile", {}).get("name", "Cliente") if contacts else "Cliente"
@@ -397,6 +387,7 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
                         # Respondemos 200 OK a Meta inmediatamente y procesamos asíncronamente
                         background_tasks.add_task(
                             procesar_mensaje_en_segundo_plano,
+                            msg_id,
                             from_number,
                             text_body,
                             nombre

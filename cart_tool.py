@@ -11,8 +11,11 @@ from bsale_client import generar_boleta_bsale
 # ------------------------------------------------------------------------------
 # 1. Configuración de Supabase para la herramienta de Carrito
 # ------------------------------------------------------------------------------
-SUPABASE_URL = os.environ.get("SUPABASE_URL") or "https://hbkwldkkfzlunptemxtw.supabase.co"
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY") or "sb_publishable_31oqg5WiRUqi4kZ9_BxKxw_OKJAi_XF"
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise ValueError("Faltan las variables de entorno SUPABASE_URL o SUPABASE_KEY en el archivo .env o en el entorno.")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 

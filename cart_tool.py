@@ -98,7 +98,7 @@ def ver_carrito(phone_number: str = DEFAULT_PHONE) -> str:
 def procesar_cierre_pedido(phone_number: str = DEFAULT_PHONE) -> str:
     """
     Cierra el carrito activo, emite la boleta electrónica en BSale (si está configurado) 
-    o registra el pedido en Supabase como respaldo, y vacía el carrito.
+    o registra el pedido en Supabase como respaldo, descuenta el stock en la tabla productos y vacía el carrito.
     """
     try:
         num = phone_number if phone_number and phone_number.strip() else DEFAULT_PHONE
@@ -146,6 +146,18 @@ def procesar_cierre_pedido(phone_number: str = DEFAULT_PHONE) -> str:
         }
         
         supabase.table("pedidos").insert(nuevo_pedido).execute()
+
+        # 5.1 Descontar el stock de cada producto en la tabla 'productos'
+        for item in items:
+            sku_item = item.get("sku")
+            cant_comprada = int(item.get("cantidad", 1))
+            
+            prod_res = supabase.table("productos").select("stock").eq("sku", sku_item).execute()
+            if prod_res.data and len(prod_res.data) > 0:
+                stock_actual = int(prod_res.data[0].get("stock", 0))
+                nuevo_stock = max(0, stock_actual - cant_comprada)
+                
+                supabase.table("productos").update({"stock": nuevo_stock}).eq("sku", sku_item).execute()
 
         # 6. Vaciar el carrito
         supabase.table("carritos").delete().eq("phone_number", num).execute()

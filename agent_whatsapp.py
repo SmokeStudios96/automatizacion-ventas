@@ -237,7 +237,7 @@ def send_whatsapp_message(recipient: str, text: str):
 
 
 def ask_agent(user_text: str, telefono_cliente: str, nombre_cliente: str = "Cliente") -> str:
-    """Procesa la respuesta con Gemini SDK nativo en una sola llamada ultrarrápida."""
+    """Procesa la respuesta con Gemini SDK ejecutando Function Calling para el carrito si se requiere."""
     gemini_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or GEMINI_API_KEY
     if not gemini_key:
         print("❌ Error: GEMINI_API_KEY no configurada.")
@@ -264,27 +264,55 @@ Contacto de derivación humana: {datos['telefono_contacto']}.
 Contexto operativo: [{contexto}]
 Disponibilidad en Google Calendar: [{info_agenda if info_agenda else 'Sin consultas directas a la agenda en este turno.'}]
 
-Catálogo de productos disponibles en tienda:
+Catálogo de productos disponibles en tienda (Verifica stock antes de ofrecer):
 {datos['catalogo_texto']}
 
 Cliente: {nombre_cliente} | Teléfono: {clean_phone}
 Mensaje del cliente: {user_text}
 
-Responde de forma concisa, profesional y directa para WhatsApp."""
+INSTRUCCIONES DE RESPUESTA:
+- Responde de forma completa, amable, concisa y directa para WhatsApp.
+- Si el cliente solicita agregar productos al carrito, consultar su carrito o finalizar la compra, invoca las herramientas correspondientes.
+- Si solo consulta información o catálogo, entrega SIEMPRE la respuesta completa con el nombre exacto, precio en CLP y stock disponible de todos los productos consultados en un solo mensaje."""
 
     try:
         client = genai.Client(api_key=gemini_key)
         
-        # Invocamos Gemini con herramientas del carrito nativas
+        # Invocación directa a Gemini 2.5 Flash
         response = client.models.generate_content(
             model="gemini-3.5-flash",
             contents=prompt_sistema,
             config=types.GenerateContentConfig(
-                temperature=0.3,
+                temperature=0.2,
                 max_output_tokens=800,
                 tools=[agregar_al_carrito, ver_carrito, procesar_cierre_pedido]
             )
         )
+
+        # Si el modelo solicitó ejecutar alguna herramienta de Function Calling
+        if response.function_calls:
+            for call in response.function_calls:
+                nombre_fn = call.name
+                args = call.args or {}
+                
+                res_tool = ""
+                if nombre_fn == "agregar_al_carrito":
+                    res_tool = agregar_al_carrito(
+                        telefono_cliente=clean_phone,
+                        sku=args.get("sku", ""),
+                        cantidad=int(args.get("cantidad", 1))
+                    )
+                elif nombre_fn == "ver_carrito":
+                    res_tool = ver_carrito(telefono_cliente=clean_phone)
+                elif nombre_fn == "procesar_cierre_pedido":
+                    res_tool = procesar_cierre_pedido(
+                        telefono_cliente=clean_phone,
+                        nombre_cliente=nombre_cliente
+                    )
+                
+                if res_tool:
+                    guardar_historial(clean_phone, "bot", res_tool)
+                    return res_tool
 
         if response and response.text:
             respuesta = response.text.strip()

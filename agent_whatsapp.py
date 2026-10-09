@@ -18,7 +18,7 @@ from database import SessionLocal, NegocioConfig, Producto, HistorialMensaje, si
 # ------------------------------------------------------------------------------
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 WHATSAPP_TOKEN = os.environ.get("WHATSAPP_TOKEN")
-PHONE_NUMBER_ID = os.environ.get("PHONE_NUMBER_ID", "1293789687158465")
+WHATSAPP_PHONE_ID = os.environ.get("WHATSAPP_PHONE_ID") or os.environ.get("PHONE_NUMBER_ID", "1293789687158465")
 VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN", "don_tito_ferreteria_secret_token")
 CONTACTO_HUMANO = os.environ.get("CONTACTO_HUMANO", "+56939270181")
 
@@ -233,7 +233,7 @@ def detectar_solicitud_humana(texto: str) -> bool:
 def send_whatsapp_message(recipient, text):
     """Envía el mensaje de texto al usuario por WhatsApp Cloud API."""
     token = os.environ.get("WHATSAPP_TOKEN")
-    phone_id = os.environ.get("PHONE_NUMBER_ID", PHONE_NUMBER_ID)
+    phone_id = os.environ.get("WHATSAPP_PHONE_ID") or os.environ.get("PHONE_NUMBER_ID", WHATSAPP_PHONE_ID)
 
     if not token:
         print("❌ Error: WHATSAPP_TOKEN no está definido en las variables de entorno.")
@@ -301,7 +301,7 @@ Instrucciones de respuesta:
 3. Si el cliente solicita agendar una reunión o consulta presencial, utiliza la disponibilidad informada.
 """
 
-    modelos_a_probar = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+    modelos_a_probar = ["gemini-3.8-flash"]
 
     try:
         client = genai.Client(api_key=gemini_key)

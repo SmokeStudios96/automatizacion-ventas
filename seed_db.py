@@ -1,67 +1,63 @@
 import os
 import json
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, text
+from supabase import create_client, Client
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-engine = create_engine(DATABASE_URL)
+SUPABASE_URL = os.environ.get("SUPABASE_URL") or "https://hbkwldkkfzlunptemxtw.supabase.co"
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY") or os.environ.get("SUPABASE_KEY")
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    print("❌ Error: SUPABASE_URL o SUPABASE_KEY no están definidas en el .env")
+    exit(1)
+
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def seed_database():
-    # Cargar productos desde catalog.json si existe
-    if os.path.exists("catalog.json"):
-        with open("catalog.json", "r", encoding="utf-8") as f:
-            catalog_data = json.load(f)
-    else:
+    if not os.path.exists("catalog.json"):
         print("❌ No se encontró catalog.json")
         return
 
-    with engine.begin() as connection:
-        # 1. Crear las tablas básicas si no existen
-        connection.execute(text("""
-            CREATE TABLE IF NOT EXISTS negocios (
-                id SERIAL PRIMARY KEY,
-                nombre VARCHAR(255) NOT NULL,
-                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-            );
+    with open("catalog.json", "r", encoding="utf-8") as f:
+        catalog_data = json.load(f)
 
-            CREATE TABLE IF NOT EXISTS productos (
-                id SERIAL PRIMARY KEY,
-                negocio_id INT,
-                sku VARCHAR(100),
-                nombre VARCHAR(255) NOT NULL,
-                precio INT NOT NULL,
-                stock INT NOT NULL,
-                categoria VARCHAR(100),
-                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-            );
-        """))
+    print("🔌 Conectando a Supabase...")
+    
+    # 1. Limpiar productos anteriores
+    print("🧹 Limpiando productos anteriores en la tabla 'productos'...")
+    supabase.table("productos").delete().neq("id", 0).execute()
+    print("   ↳ Tabla limpiada exitosamente.")
 
-        # 2. Asegurar que exista el negocio
-        connection.execute(text("""
-            INSERT INTO negocios (id, nombre) 
-            VALUES (1, 'Ferretería Don Tito')
-            ON CONFLICT (id) DO NOTHING;
-        """))
+    # 2. Sanitizar datos según esquema de la tabla (omitir 'categoria' si da conflicto o adaptarla)
+    # Mapeamos los productos asegurando las columnas clave
+    productos_a_insertar = []
+    for item in catalog_data:
+        prod = {
+            "nombre": item.get("nombre"),
+            "descripcion": item.get("descripcion", ""),
+            "precio": item.get("precio"),
+            "stock": item.get("stock", 0)
+        }
+        # Incluir sku/categoria si existen en tu JSON
+        if "sku" in item:
+            prod["sku"] = item["sku"]
+        if "categoria" in item:
+            prod["categoria"] = item["categoria"]
+            
+        productos_a_insertar.append(prod)
 
-        # 3. Limpiar productos anteriores
-        connection.execute(text("TRUNCATE TABLE productos RESTART IDENTITY CASCADE;"))
+    print(f"\n📦 Enviando {len(productos_a_insertar)} productos a Supabase...")
+    for index, prod in enumerate(productos_a_insertar, 1):
+        print(f"   [{index}/{len(productos_a_insertar)}] Insertando: {prod['nombre']} - ${prod['precio']:,} CLP")
 
-        # 4. Insertar catálogo de la Ferretería
-        for prod in catalog_data:
-            connection.execute(text("""
-                INSERT INTO productos (negocio_id, sku, nombre, precio, stock, categoria)
-                VALUES (1, :sku, :nombre, :precio, :stock, :categoria)
-            """), {
-                "sku": prod.get("sku"),
-                "nombre": prod.get("nombre"),
-                "precio": prod.get("precio"),
-                "stock": prod.get("stock"),
-                "categoria": prod.get("categoria")
-            })
-
-    print(f"✅ Base de datos sembrada con éxito con {len(catalog_data)} productos de Ferretería Don Tito.")
+    # 3. Inserción masiva en la base de datos
+    res = supabase.table("productos").insert(productos_a_insertar).execute()
+    
+    print("\n" + "="*50)
+    print(f"✅ ¡ÉXITO TOTAL! Base de datos sembrada correctamente.")
+    print(f"   Total de registros insertados: {len(res.data)}")
+    print("="*50)
 
 if __name__ == "__main__":
     seed_database()

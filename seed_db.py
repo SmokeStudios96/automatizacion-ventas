@@ -1,4 +1,5 @@
 import os
+import json
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 
@@ -7,74 +8,60 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 engine = create_engine(DATABASE_URL)
 
-# Catálogo genérico de Minimarket
-minimarket_data = [
-    {
-        "nombre": "Coca-Cola Original 1.5L",
-        "descripcion": "Bebida fantasía desechable 1.5 Litros.",
-        "precio": 1800,
-        "stock": 24
-    },
-    {
-        "nombre": "Papas Fritas Lays Corte Americano 220g",
-        "descripcion": "Papas fritas saladas formato familiar.",
-        "precio": 2200,
-        "stock": 15
-    },
-    {
-        "nombre": "Galletas Tritón Chocolate 126g",
-        "descripcion": "Galletas de chocolate con relleno crema vainilla.",
-        "precio": 950,
-        "stock": 40
-    },
-    {
-        "nombre": "Agua Mineral Cachantun Sin Gas 1.5L",
-        "descripcion": "Agua mineral purificada embotellada 1.5L.",
-        "precio": 1100,
-        "stock": 30
-    },
-    {
-        "nombre": "Chocolate Trencito 150g",
-        "descripcion": "Barra de chocolate de leche clásico.",
-        "precio": 2500,
-        "stock": 18
-    },
-    {
-        "nombre": "Bebida Red Bull Tropical 250ml",
-        "descripcion": "Lata de bebida energética sabor frutas tropicales.",
-        "precio": 2100,
-        "stock": 20
-    },
-    {
-        "nombre": "Café Nescafé Fina Selección 100g",
-        "descripcion": "Frasco de café instantáneo liofilizado.",
-        "precio": 4800,
-        "stock": 12
-    }
-]
-
 def seed_database():
-    with engine.connect() as conn:
-        trans = conn.begin()
-        try:
-            print("Limpiando catálogo anterior...")
-            # Limpiamos la tabla para que no queden taladros ni productos antiguos
-            conn.execute(text("TRUNCATE TABLE productos CASCADE;"))
+    # Cargar productos desde catalog.json si existe
+    if os.path.exists("catalog.json"):
+        with open("catalog.json", "r", encoding="utf-8") as f:
+            catalog_data = json.load(f)
+    else:
+        print("❌ No se encontró catalog.json")
+        return
 
-            print("Insertando productos de Minimarket...")
-            for item in minimarket_data:
-                conn.execute(
-                    text("""
-                        INSERT INTO productos (nombre, descripcion, precio, stock)
-                        VALUES (:nombre, :descripcion, :precio, :stock)
-                    """),
-                    item
-                )
-            trans.commit()
-            print("¡Catálogo de Minimarket cargado con éxito en Supabase!")
-        except Exception as e:
-            trans.rollback()
-            print(f"Error al actualizar la base de datos: {e}")
+    with engine.begin() as connection:
+        # 1. Crear las tablas básicas si no existen
+        connection.execute(text("""
+            CREATE TABLE IF NOT EXISTS negocios (
+                id SERIAL PRIMARY KEY,
+                nombre VARCHAR(255) NOT NULL,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS productos (
+                id SERIAL PRIMARY KEY,
+                negocio_id INT,
+                sku VARCHAR(100),
+                nombre VARCHAR(255) NOT NULL,
+                precio INT NOT NULL,
+                stock INT NOT NULL,
+                categoria VARCHAR(100),
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            );
+        """))
+
+        # 2. Asegurar que exista el negocio
+        connection.execute(text("""
+            INSERT INTO negocios (id, nombre) 
+            VALUES (1, 'Ferretería Don Tito')
+            ON CONFLICT (id) DO NOTHING;
+        """))
+
+        # 3. Limpiar productos anteriores
+        connection.execute(text("TRUNCATE TABLE productos RESTART IDENTITY CASCADE;"))
+
+        # 4. Insertar catálogo de la Ferretería
+        for prod in catalog_data:
+            connection.execute(text("""
+                INSERT INTO productos (negocio_id, sku, nombre, precio, stock, categoria)
+                VALUES (1, :sku, :nombre, :precio, :stock, :categoria)
+            """), {
+                "sku": prod.get("sku"),
+                "nombre": prod.get("nombre"),
+                "precio": prod.get("precio"),
+                "stock": prod.get("stock"),
+                "categoria": prod.get("categoria")
+            })
+
+    print(f"✅ Base de datos sembrada con éxito con {len(catalog_data)} productos de Ferretería Don Tito.")
 
 if __name__ == "__main__":
     seed_database()

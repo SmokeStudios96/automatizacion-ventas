@@ -139,7 +139,7 @@ INSTRUCCIONES DE RESPUESTA:
     try:
         client = genai.Client(api_key=gemini_key)
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-3.5-flash",
             contents=prompt_sistema,
             config=types.GenerateContentConfig(temperature=0.3, max_output_tokens=800)
         )

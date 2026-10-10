@@ -11,7 +11,7 @@ from googleapiclient.discovery import build
 from google import genai
 from google.genai import types
 
-from database import SessionLocal, sincronizar_chat_supabase
+from database import guardar_historial_seguro, sincronizar_chat_supabase
 from calendar_estetica_tool import book_estetica_appointment, get_available_slots_estetica
 
 # ------------------------------------------------------------------------------
@@ -66,16 +66,7 @@ def obtener_datos_negocio():
 
 
 def guardar_historial(telefono: str, remitente: str, mensaje: str):
-    db = SessionLocal()
-    try:
-        from database import HistorialMensaje
-        nuevo = HistorialMensaje(cliente_telefono=telefono, remitente=remitente, mensaje=mensaje)
-        db.add(nuevo)
-        db.commit()
-    except Exception as e:
-        print(f"❌ Error guardando historial: {e}")
-    finally:
-        db.close()
+    guardar_historial_seguro(telefono, remitente, mensaje, agente="estetica")
 
 
 def detectar_solicitud_humana(texto: str) -> bool:
@@ -177,12 +168,16 @@ def procesar_mensaje_en_segundo_plano(msg_id: str, from_number: str, text_body: 
         guardar_historial(from_number, "cliente", text_body)
         requiere_humano = detectar_solicitud_humana(text_body)
 
-        sincronizar_chat_supabase(
-            telefono=from_number,
-            cliente_nombre=nombre,
-            ultimo_mensaje=text_body,
-            requiere_humano=requiere_humano
-        )
+        try:
+            sincronizar_chat_supabase(
+                telefono=from_number,
+                cliente_nombre=nombre,
+                ultimo_mensaje=text_body,
+                requiere_humano=requiere_humano,
+                agente="estetica"
+            )
+        except Exception as e:
+            print(f"⚠️ Supabase sync falló suavemente: {e}")
 
         reply = ask_agent(text_body, from_number, nombre)
         send_whatsapp_message(from_number, reply)

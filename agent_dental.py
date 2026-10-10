@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from google import genai
 from google.genai import types
 
-from database import SessionLocal, HistorialMensaje, sincronizar_chat_supabase
+from database import guardar_historial_seguro, sincronizar_chat_supabase
 from calendar_dental_tool import get_available_slots, book_dental_appointment
 
 # ------------------------------------------------------------------------------
@@ -65,15 +65,7 @@ def obtener_datos_clinica():
 
 
 def guardar_historial(telefono: str, remitente: str, mensaje: str):
-    db = SessionLocal()
-    try:
-        nuevo = HistorialMensaje(cliente_telefono=telefono, remitente=remitente, mensaje=mensaje)
-        db.add(nuevo)
-        db.commit()
-    except Exception as e:
-        print(f"❌ Error guardando historial: {e}")
-    finally:
-        db.close()
+    guardar_historial_seguro(telefono, remitente, mensaje, agente="dental")
 
 
 def obtener_contexto_horario():
@@ -81,7 +73,7 @@ def obtener_contexto_horario():
     ahora = datetime.now(tz_chile)
     dias_semana = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
     dia_str = dias_semana[ahora.weekday()]
-    fecha_iso = ahora.strftime("%Y-%m-%d")
+    fecha_iso = now_iso = ahora.strftime("%Y-%m-%d")
     hora_str = ahora.strftime("%H:%M")
     return f"Momento actual: {dia_str} {fecha_iso} a las {hora_str} hrs."
 
@@ -240,12 +232,16 @@ def procesar_mensaje_en_segundo_plano(msg_id: str, from_number: str, text_body: 
         guardar_historial(from_number, "cliente", text_body)
         requiere_humano = detectar_solicitud_humana(text_body)
 
-        sincronizar_chat_supabase(
-            telefono=from_number,
-            cliente_nombre=nombre,
-            ultimo_mensaje=text_body,
-            requiere_humano=requiere_humano
-        )
+        try:
+            sincronizar_chat_supabase(
+                telefono=from_number,
+                cliente_nombre=nombre,
+                ultimo_mensaje=text_body,
+                requiere_humano=requiere_humano,
+                agente="dental"
+            )
+        except Exception as e:
+            print(f"⚠️ Supabase sync falló suavemente: {e}")
 
         reply = ask_agent(text_body, from_number, nombre)
         send_whatsapp_message(from_number, reply)
@@ -307,12 +303,17 @@ async def enviar_mensaje_manual(data: MensajeManualRequest):
         send_whatsapp_message(clean_phone, data.mensaje)
         guardar_historial(clean_phone, "operador", data.mensaje)
         
-        sincronizar_chat_supabase(
-            telefono=clean_phone,
-            cliente_nombre="Paciente",
-            ultimo_mensaje=data.mensaje,
-            requiere_humano=True
-        )
+        try:
+            sincronizar_chat_supabase(
+                telefono=clean_phone,
+                cliente_nombre="Paciente",
+                ultimo_mensaje=data.mensaje,
+                requiere_humano=True,
+                agente="dental"
+            )
+        except Exception:
+            pass
+
         return {"status": "success", "message": "Mensaje enviado correctamente"}
     except Exception as e:
         print(f"❌ Error al enviar mensaje manual: {e}")

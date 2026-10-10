@@ -11,7 +11,7 @@ from googleapiclient.discovery import build
 from google import genai
 from google.genai import types
 
-from database import SessionLocal, NegocioConfig, Producto, HistorialMensaje, sincronizar_chat_supabase
+from database import SessionLocal, NegocioConfig, Producto, HistorialMensajeGeneral, guardar_historial_seguro, sincronizar_chat_supabase
 from cart_tool import agregar_al_carrito, ver_carrito, procesar_cierre_pedido
 
 # ------------------------------------------------------------------------------
@@ -37,6 +37,16 @@ VENTANA_TIEMPO_SEG = 30
 
 def get_calendar_service():
     """Autentica y retorna la instancia del servicio de Google Calendar."""
+    creds_json = os.getenv("GOOGLE_CREDENTIALS_JSON")
+    if creds_json:
+        try:
+            info = json.loads(creds_json)
+            creds = Credentials.from_service_account_info(info, scopes=SCOPES)
+            return build("calendar", "v3", credentials=creds)
+        except Exception as e:
+            print(f"⚠️ Error cargando credenciales de Calendar desde env: {e}")
+            return None
+
     if not os.path.exists(CREDENTIALS_FILE):
         return None
     try:
@@ -52,7 +62,7 @@ def obtener_bloques_ocupados(fecha_str: str) -> str:
     try:
         service = get_calendar_service()
         if not service or not GOOGLE_CALENDAR_ID:
-            return "El servicio de calendario não está configurado actualmente."
+            return "El servicio de calendario no está configurado actualmente."
 
         time_min = f"{fecha_str}T00:00:00-03:00"
         time_max = f"{fecha_str}T23:59:59-03:00"
@@ -119,7 +129,6 @@ def obtener_datos_negocio():
     if not catalogo_texto:
         db = SessionLocal()
         try:
-            # Consulta directa al esquema ferreteria en Supabase
             sql_productos = "SELECT nombre, sku, precio, stock, categoria FROM ferreteria.productos;"
             productos_db = db.execute(sql_productos).fetchall()
             if productos_db:
@@ -148,15 +157,7 @@ def obtener_datos_negocio():
 
 
 def guardar_historial(telefono: str, remitente: str, mensaje: str):
-    db = SessionLocal()
-    try:
-        nuevo = HistorialMensaje(cliente_telefono=telefono, remitente=remitente, mensaje=mensaje)
-        db.add(nuevo)
-        db.commit()
-    except Exception as e:
-        print(f"❌ Error guardando historial: {e}")
-    finally:
-        db.close()
+    guardar_historial_seguro(telefono, remitente, mensaje, agente="ferreteria")
 
 
 def obtener_contexto_horario():
@@ -224,7 +225,6 @@ def ask_agent(user_text: str, telefono_cliente: str, nombre_cliente: str = "Clie
     contexto = obtener_contexto_horario()
     clean_phone = telefono_cliente.replace("+", "").strip()
 
-    # Evaluamos Google Calendar ÚNICAMENTE si la consulta menciona agenda/citas
     texto_lower = user_text.lower()
     info_agenda = ""
     if any(kw in texto_lower for kw in ["hoy", "mañana", "agendar", "reunion", "cita", "hora", "disponibilidad"]):
@@ -333,7 +333,6 @@ def verify_webhook(request: Request):
 
 
 def procesar_mensaje_en_segundo_plano(msg_id: str, from_number: str, text_body: str, nombre: str):
-    """Ejecuta el procesamiento en segundo plano con control de idempotencia."""
     try:
         es_valido, msj_error = validar_mensaje_entrante(from_number, text_body)
         if not es_valido:
@@ -343,12 +342,16 @@ def procesar_mensaje_en_segundo_plano(msg_id: str, from_number: str, text_body: 
         guardar_historial(from_number, "cliente", text_body)
         requiere_humano = detectar_solicitud_humana(text_body)
 
-        sincronizar_chat_supabase(
-            telefono=from_number,
-            cliente_nombre=nombre,
-            ultimo_mensaje=text_body,
-            requiere_humano=requiere_humano
-        )
+        try:
+            sincronizar_chat_supabase(
+                telefono=from_number,
+                cliente_nombre=nombre,
+                ultimo_mensaje=text_body,
+                requiere_humano=requiere_humano,
+                agente="ferreteria"
+            )
+        except Exception as e:
+            print(f"⚠️ Supabase sync falló suavemente: {e}")
 
         reply = ask_agent(text_body, from_number, nombre)
         send_whatsapp_message(from_number, reply)
@@ -377,19 +380,15 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
                     msg_id = msg.get("id", "")
                     
                     if msg_id in processed_message_ids:
-                        print(f"⚠️ [Webhook] Mensaje duplicado detectado y descartado (ID: {msg_id})")
                         return {"status": "ignored_duplicate"}
 
                     processed_message_ids.add(msg_id)
-
                     raw_phone = msg.get("from", "")
                     from_number = raw_phone.replace("+", "").strip()
                     nombre = contacts[0].get("profile", {}).get("name", "Cliente") if contacts else "Cliente"
 
                     if msg.get("type") == "text":
                         text_body = msg.get("text", {}).get("body", "")
-                        print(f"\n📩 [WhatsApp Ferretería de {nombre} ({from_number})]: {text_body}")
-
                         background_tasks.add_task(
                             procesar_mensaje_en_segundo_plano,
                             msg_id,
@@ -397,7 +396,6 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
                             text_body,
                             nombre
                         )
-
                         return {"status": "processing"}
 
         return {"status": "ignored"}
@@ -413,13 +411,17 @@ async def enviar_mensaje_manual(data: MensajeManualRequest):
         send_whatsapp_message(clean_phone, data.mensaje)
         guardar_historial(clean_phone, "operador", data.mensaje)
         
-        sincronizar_chat_supabase(
-            telefono=clean_phone,
-            cliente_nombre="Cliente",
-            ultimo_mensaje=data.mensaje,
-            requiere_humano=True
-        )
-        
+        try:
+            sincronizar_chat_supabase(
+                telefono=clean_phone,
+                cliente_nombre="Cliente",
+                ultimo_mensaje=data.mensaje,
+                requiere_humano=True,
+                agente="ferreteria"
+            )
+        except Exception:
+            pass
+
         return {"status": "success", "message": "Mensaje enviado correctamente"}
     except Exception as e:
         print(f"❌ Error al enviar mensaje manual: {e}")

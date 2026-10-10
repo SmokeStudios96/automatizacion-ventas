@@ -6,7 +6,7 @@ from sqlalchemy.orm import sessionmaker, relationship
 from supabase import create_client, Client
 
 # ------------------------------------------------------------------------------
-# 1. Base de Datos PostgreSQL Principal (Render)
+# 1. Base de Datos PostgreSQL Principal (Render / Supabase Direct)
 # ------------------------------------------------------------------------------
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
@@ -18,44 +18,21 @@ if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
 elif DATABASE_URL and DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
 
-engine = create_engine(DATABASE_URL)
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,  # Verifica la conexión activa antes de ejecutar la consulta
+    pool_recycle=300
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
-class NegocioConfig(Base):
-    __tablename__ = "negocios"
-    __table_args__ = {"schema": "ferreteria"}  # Vinculado al esquema exclusivo
+class HistorialMensajeGeneral(Base):
+    """Tabla unificada de historial para todas las verticales (Ferretería, Estética, Dental)."""
+    __tablename__ = "historial_mensajes_general"
     
     id = Column(Integer, primary_key=True, index=True)
-    nombre_negocio = Column(String(100), nullable=False, default="Smoke Studios")
-    usuario = Column(String(50), unique=True, index=True, nullable=True)
-    password = Column(String(100), nullable=True)
-    persona_ia = Column(String(100), nullable=False, default="Ejecutivo Comercial Virtual")
-    reglas_atencion = Column(Text, nullable=True)
-    telefono_contacto = Column(String(20), nullable=True, default="+56939270181")
-    productos = relationship("Producto", back_populates="negocio")
-
-
-class Producto(Base):
-    __tablename__ = "productos"
-    __table_args__ = {"schema": "ferreteria"}  # Vinculado al esquema exclusivo
-    
-    id = Column(Integer, primary_key=True, index=True)
-    negocio_id = Column(Integer, ForeignKey("ferreteria.negocios.id"))
-    sku = Column(String(50), unique=True, index=True)
-    nombre = Column(String(150), nullable=False)
-    categoria = Column(String(100), nullable=True)
-    precio = Column(Float, nullable=False)
-    stock = Column(Integer, default=0)
-    negocio = relationship("NegocioConfig", back_populates="productos")
-
-
-class HistorialMensaje(Base):
-    __tablename__ = "historial_mensajes"
-    __table_args__ = {"schema": "ferreteria"}  # Historial específico de la ferretería
-    
-    id = Column(Integer, primary_key=True, index=True)
+    agente = Column(String(30), index=True, default="estetica")  # 'estetica', 'dental', 'ferreteria'
     cliente_telefono = Column(String(30), index=True)
     remitente = Column(String(20))  # 'cliente' o 'bot'
     mensaje = Column(Text, nullable=False)
@@ -80,10 +57,9 @@ if SUPABASE_URL and SUPABASE_KEY:
         print(f"⚠️ Error inicializando Supabase Client en database.py: {e}")
 
 
-def sincronizar_chat_supabase(telefono: str, cliente_nombre: str, ultimo_mensaje: str, requiere_humano: bool):
+def sincronizar_chat_supabase(telefono: str, cliente_nombre: str, ultimo_mensaje: str, requiere_humano: bool, agente: str = "estetica"):
     """
-    Sincroniza el chat entrante con la tabla whatsapp_chats de Supabase
-    para que se actualice de inmediato en el Dashboard de Next.js (Smoke Studios).
+    Sincroniza el chat entrante con la tabla whatsapp_chats de Supabase.
     """
     if not supabase_client:
         return
@@ -104,6 +80,7 @@ def sincronizar_chat_supabase(telefono: str, cliente_nombre: str, ultimo_mensaje
             "ultimo_mensaje": ultimo_mensaje,
             "requiere_humano": requiere_humano,
             "estado": estado,
+            "agente": agente
         }
 
         if res.data and len(res.data) > 0:
@@ -116,17 +93,33 @@ def sincronizar_chat_supabase(telefono: str, cliente_nombre: str, ultimo_mensaje
             }).execute()
 
     except Exception as e:
-        print(f"⚠️ Error sincronizando con tabla 'whatsapp_chats' en Supabase: {e}")
+        print(f"⚠️ Aviso (no crítico): Error sincronizando con Supabase: {e}")
+
+
+def guardar_historial_seguro(telefono: str, remitente: str, mensaje: str, agente: str = "estetica"):
+    """Guarda el historial en la BD asegurando que un fallo de red no bote al bot."""
+    try:
+        db = SessionLocal()
+        nuevo = HistorialMensajeGeneral(
+            agente=agente,
+            cliente_telefono=telefono,
+            remitente=remitente,
+            mensaje=mensaje
+        )
+        db.add(nuevo)
+        db.commit()
+        db.close()
+    except Exception as e:
+        print(f"⚠️ Aviso (no crítico): No se pudo guardar historial en BD: {e}")
 
 
 def init_db():
-    """Inicializa y asegura las tablas de PostgreSQL en el esquema ferreteria."""
-    Base.metadata.create_all(bind=engine)
-    with engine.connect() as conn:
-        conn.execute(text('ALTER TABLE ferreteria.negocios ADD COLUMN IF NOT EXISTS usuario VARCHAR(50);'))
-        conn.execute(text('ALTER TABLE ferreteria.negocios ADD COLUMN IF NOT EXISTS password VARCHAR(100);'))
-        conn.commit()
-    print("✅ Tablas PostgreSQL verificadas en el esquema ferreteria.")
+    """Inicializa la base de datos."""
+    try:
+        Base.metadata.create_all(bind=engine)
+        print("✅ Tablas PostgreSQL verificadas.")
+    except Exception as e:
+        print(f"⚠️ Error inicializando BD: {e}")
 
 
 if __name__ == "__main__":

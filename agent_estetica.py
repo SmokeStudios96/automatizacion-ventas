@@ -47,15 +47,20 @@ def obtener_datos_negocio():
         "persona_ia": "Asistente virtual especialista en atención al cliente de Ona Songailaite",
         "reglas_atencion": (
             "1. Eres cálida, profesional y experta en belleza, micropigmentación (PMU), microblading y formaciones profesionales.\n"
-            "2. Informa sobre los servicios estéticos (microblading, micropigmentación de labios/cejas) y sobre los cursos especializados (ej. Guía de Pigmentología y Colorimetría, formaciones presenciales).\n"
-            "3. Si el cliente quiere agendar una evaluación estética o inscribirse a un curso, consulta su disponibilidad y ayúdale a reservar utilizando la herramienta de agendamiento.\n"
+            "2. Informa sobre los servicios estéticos y sus valores exactos cuando el cliente pregunte.\n"
+            "3. Si el cliente quiere agendar una evaluación o procedimiento, consulta su disponibilidad y ayúdale a reservar.\n"
             "4. Deriva al contacto humano ante dudas complejas de salud o requerimientos especiales."
         ),
         "telefono_contacto": CONTACTO_HUMANO,
         "servicios_cursos": (
-            "- Microblading y Micropigmentación Facial (Cejas, Labios, Ojos)\n"
-            "- Curso / Guía de Pigmentología y Colorimetría para Micropigmentación (Hotmart)\n"
-            "- Asesorías y Formaciones Profesionales Avanzadas para artistas del rubro"
+            "PROCEDIMIENTOS DE ESTÉTICA Y PMU:\n"
+            "- Microblading de Cejas: $150.000 (Duración: 2 hrs)\n"
+            "- Micropigmentación de Labios: $160.000 (Duración: 2.5 hrs)\n"
+            "- Efecto Polvo Cejas (Powder Brows): $140.000 (Duración: 2 hrs)\n"
+            "- Repaso / Retoque de Cejas: $50.000 (Duración: 1.5 hrs)\n\n"
+            "FORMACIONES Y ACADEMIA PMU:\n"
+            "- Guía Digital de Pigmentología y Colorimetría para PMU (Disponible en Hotmart)\n"
+            "- Cursos Presenciales y Masterclasses para artistas del rubro"
         )
     }
 
@@ -118,7 +123,7 @@ def ask_agent(user_text: str, telefono_cliente: str, nombre_cliente: str = "Clie
 Reglas de atención:
 {datos['reglas_atencion']}
 
-Servicios y Capacitaciones Principales:
+Servicios, Precios y Capacitaciones Principales:
 {datos['servicios_cursos']}
 
 Disponibilidad en Google Calendar: [{info_agenda if info_agenda else 'Sin consulta de agenda directa.'}]
@@ -128,12 +133,13 @@ Mensaje del cliente: {user_text}
 
 INSTRUCCIONES DE RESPUESTA:
 - Responde de forma elegante, cercana, clara y orientada a la conversión para WhatsApp.
-- Si muestra interés en un curso o procedimiento, explícale los detalles principales e invítale a asegurar su cupo o cita."""
+- Si pregunta por precios o servicios, entrégale la lista clara con sus valores exactos.
+- Si muestra interés en un curso o procedimiento, explícale los detalles e invítale a asegurar su cupo o cita."""
 
     try:
         client = genai.Client(api_key=gemini_key)
         response = client.models.generate_content(
-            model="gemini-3.5-flash",
+            model="gemini-2.5-flash",
             contents=prompt_sistema,
             config=types.GenerateContentConfig(temperature=0.3, max_output_tokens=800)
         )

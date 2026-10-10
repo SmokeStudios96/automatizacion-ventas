@@ -1,1 +1,1 @@
-web: uvicorn agent_ferreteria:app --host 0.0.0.0 --port $PORT
+web: uvicorn agent_estetica:app --host 0.0.0.0 --port $PORT

@@ -12,7 +12,7 @@ from google import genai
 from google.genai import types
 
 from database import SessionLocal, sincronizar_chat_supabase
-from calendar_dental_tool import agendar_cita_dental  # O puedes reutilizar/adaptar la herramienta de calendario
+from calendar_estetica_tool import book_estetica_appointment, get_available_slots_estetica
 
 # ------------------------------------------------------------------------------
 # 1. Configuración de Variables de Entorno y Google Calendar
@@ -23,7 +23,7 @@ WHATSAPP_PHONE_ID = os.environ.get("WHATSAPP_PHONE_ID") or os.environ.get("PHONE
 VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN", "ona_pmu_secret_token")
 CONTACTO_HUMANO = os.environ.get("CONTACTO_HUMANO", "+56939270181")
 
-GOOGLE_CALENDAR_ID = os.environ.get("GOOGLE_CALENDAR_ID")
+GOOGLE_CALENDAR_ID = os.environ.get("GOOGLE_CALENDAR_ID_ESTETICA")
 CREDENTIALS_FILE = "google_credentials.json"
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
@@ -34,51 +34,8 @@ MAX_MENSAJES_RAFAGA = 5
 VENTANA_TIEMPO_SEG = 30
 
 
-def get_calendar_service():
-    if not os.path.exists(CREDENTIALS_FILE):
-        return None
-    try:
-        creds = Credentials.from_service_account_file(CREDENTIALS_FILE, scopes=SCOPES)
-        return build("calendar", "v3", credentials=creds)
-    except Exception as e:
-        print(f"⚠️ Error cargando credenciales de Calendar: {e}")
-        return None
-
-
 def obtener_bloques_ocupados(fecha_str: str) -> str:
-    try:
-        service = get_calendar_service()
-        if not service or not GOOGLE_CALENDAR_ID:
-            return "Calendario no disponible en este momento."
-
-        time_min = f"{fecha_str}T00:00:00-03:00"
-        time_max = f"{fecha_str}T23:59:59-03:00"
-
-        events_result = service.events().list(
-            calendarId=GOOGLE_CALENDAR_ID,
-            timeMin=time_min,
-            timeMax=time_max,
-            singleEvents=True,
-            orderBy="startTime"
-        ).execute()
-
-        events = events_result.get("items", [])
-        if not events:
-            return f"Agenda completamente disponible para el día {fecha_str}."
-
-        bloques = []
-        for event in events:
-            inicio = event["start"].get("dateTime", event["start"].get("date"))
-            fin = event["end"].get("dateTime", event["end"].get("date"))
-            resumen = event.get("summary", "Ocupado")
-            if "T" in inicio:
-                bloques.append(f"- De {inicio.split('T')[1][:5]} a {fin.split('T')[1][:5]} hrs ({resumen})")
-            else:
-                bloques.append(f"- Todo el día: {resumen}")
-
-        return f"Horarios ocupados el {fecha_str}:\n" + "\n".join(bloques)
-    except Exception as e:
-        return f"No se pudo consultar el calendario: {e}"
+    return get_available_slots_estetica(fecha_str)
 
 
 # ------------------------------------------------------------------------------
@@ -89,16 +46,16 @@ def obtener_datos_negocio():
         "nombre_negocio": "Academia y Estética PMU - Ona Songailaite",
         "persona_ia": "Asistente virtual especialista en atención al cliente de Ona Songailaite",
         "reglas_atencion": (
-            "1. Eres cálida, profesional y experta en belleza, micropigmentación (PMU), microblading y formaciones profesionales[cite: 11].\n"
-            "2. Informa sobre los servicios estéticos (microblading, micropigmentación de labios/cejas) y sobre los cursos especializados (ej. Guía de Pigmentología y Colorimetría, formaciones presenciales)[cite: 11].\n"
-            "3. Si el cliente quiere agendar una evaluación estética o inscribirse a un curso, consulta su disponibilidad y ayúdale a reservar.\n"
+            "1. Eres cálida, profesional y experta en belleza, micropigmentación (PMU), microblading y formaciones profesionales.\n"
+            "2. Informa sobre los servicios estéticos (microblading, micropigmentación de labios/cejas) y sobre los cursos especializados (ej. Guía de Pigmentología y Colorimetría, formaciones presenciales).\n"
+            "3. Si el cliente quiere agendar una evaluación estética o inscribirse a un curso, consulta su disponibilidad y ayúdale a reservar utilizando la herramienta de agendamiento.\n"
             "4. Deriva al contacto humano ante dudas complejas de salud o requerimientos especiales."
         ),
         "telefono_contacto": CONTACTO_HUMANO,
         "servicios_cursos": (
-            "- Microblading y Micropigmentación Facial (Cejas, Labios, Ojos)[cite: 11]\n"
-            "- Curso / Guía de Pigmentología y Colorimetría para Micropigmentación (Hotmart)[cite: 11]\n"
-            "- Asesorías y Formaciones Profesionales Avanzadas para artistas del rubro[cite: 11]"
+            "- Microblading y Micropigmentación Facial (Cejas, Labios, Ojos)\n"
+            "- Curso / Guía de Pigmentología y Colorimetría para Micropigmentación (Hotmart)\n"
+            "- Asesorías y Formaciones Profesionales Avanzadas para artistas del rubro"
         )
     }
 
@@ -176,7 +133,7 @@ INSTRUCCIONES DE RESPUESTA:
     try:
         client = genai.Client(api_key=gemini_key)
         response = client.models.generate_content(
-            model="gemini-3.5-flash-lite",
+            model="gemini-2.5-flash",
             contents=prompt_sistema,
             config=types.GenerateContentConfig(temperature=0.3, max_output_tokens=800)
         )

@@ -25,6 +25,8 @@ Base = declarative_base()
 
 class NegocioConfig(Base):
     __tablename__ = "negocios"
+    __table_args__ = {"schema": "ferreteria"}  # Vinculado al esquema exclusivo
+    
     id = Column(Integer, primary_key=True, index=True)
     nombre_negocio = Column(String(100), nullable=False, default="Smoke Studios")
     usuario = Column(String(50), unique=True, index=True, nullable=True)
@@ -37,8 +39,10 @@ class NegocioConfig(Base):
 
 class Producto(Base):
     __tablename__ = "productos"
+    __table_args__ = {"schema": "ferreteria"}  # Vinculado al esquema exclusivo
+    
     id = Column(Integer, primary_key=True, index=True)
-    negocio_id = Column(Integer, ForeignKey("negocios.id"))
+    negocio_id = Column(Integer, ForeignKey("ferreteria.negocios.id"))
     sku = Column(String(50), unique=True, index=True)
     nombre = Column(String(150), nullable=False)
     categoria = Column(String(100), nullable=True)
@@ -49,6 +53,8 @@ class Producto(Base):
 
 class HistorialMensaje(Base):
     __tablename__ = "historial_mensajes"
+    __table_args__ = {"schema": "ferreteria"}  # Historial específico de la ferretería
+    
     id = Column(Integer, primary_key=True, index=True)
     cliente_telefono = Column(String(30), index=True)
     remitente = Column(String(20))  # 'cliente' o 'bot'
@@ -85,7 +91,6 @@ def sincronizar_chat_supabase(telefono: str, cliente_nombre: str, ultimo_mensaje
     estado = "humano_activo" if requiere_humano else "bot_activo"
 
     try:
-        # Buscar si ya existe el chat
         res = (
             supabase_client.table("whatsapp_chats")
             .select("id")
@@ -115,13 +120,13 @@ def sincronizar_chat_supabase(telefono: str, cliente_nombre: str, ultimo_mensaje
 
 
 def init_db():
-    """Inicializa y asegura las tablas de PostgreSQL."""
+    """Inicializa y asegura las tablas de PostgreSQL en el esquema ferreteria."""
     Base.metadata.create_all(bind=engine)
     with engine.connect() as conn:
-        conn.execute(text('ALTER TABLE negocios ADD COLUMN IF NOT EXISTS usuario VARCHAR(50);'))
-        conn.execute(text('ALTER TABLE negocios ADD COLUMN IF NOT EXISTS password VARCHAR(100);'))
+        conn.execute(text('ALTER TABLE ferreteria.negocios ADD COLUMN IF NOT EXISTS usuario VARCHAR(50);'))
+        conn.execute(text('ALTER TABLE ferreteria.negocios ADD COLUMN IF NOT EXISTS password VARCHAR(100);'))
         conn.commit()
-    print("✅ Tablas PostgreSQL verificadas.")
+    print("✅ Tablas PostgreSQL verificadas en el esquema ferreteria.")
 
 
 if __name__ == "__main__":

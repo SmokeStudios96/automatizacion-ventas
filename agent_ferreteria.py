@@ -52,7 +52,7 @@ def obtener_bloques_ocupados(fecha_str: str) -> str:
     try:
         service = get_calendar_service()
         if not service or not GOOGLE_CALENDAR_ID:
-            return "El servicio de calendario no está configurado actualmente."
+            return "El servicio de calendario não está configurado actualmente."
 
         time_min = f"{fecha_str}T00:00:00-03:00"
         time_max = f"{fecha_str}T23:59:59-03:00"
@@ -88,7 +88,7 @@ def obtener_bloques_ocupados(fecha_str: str) -> str:
 
 
 # ------------------------------------------------------------------------------
-# 2. Utilidades del Negocio, Catálogo y Horarios
+# 2. Utilidades del Negocio, Catálogo (Esquema Ferretería) y Horarios
 # ------------------------------------------------------------------------------
 def validar_mensaje_entrante(telefono: str, texto_mensaje: str) -> Tuple[bool, str]:
     ahora = time.time()
@@ -119,16 +119,16 @@ def obtener_datos_negocio():
     if not catalogo_texto:
         db = SessionLocal()
         try:
-            negocio = db.query(NegocioConfig).first()
-            if negocio:
-                productos = db.query(Producto).filter(Producto.negocio_id == negocio.id).all()
-                if productos:
-                    catalogo_texto = "\n".join([
-                        f"- {p.nombre} (SKU: {p.sku}): ${p.precio:,.0f} CLP | Categoría: {p.categoria}"
-                        for p in productos
-                    ])
+            # Consulta directa al esquema ferreteria en Supabase
+            sql_productos = "SELECT nombre, sku, precio, stock, categoria FROM ferreteria.productos;"
+            productos_db = db.execute(sql_productos).fetchall()
+            if productos_db:
+                catalogo_texto = "\n".join([
+                    f"- {p.nombre} (SKU: {p.sku}): ${p.precio:,.0f} CLP | Stock: {p.stock} un | Categoría: {p.categoria}"
+                    for p in productos_db
+                ])
         except Exception as e:
-            print(f"⚠️ Error leyendo base local: {e}")
+            print(f"⚠️ Error leyendo base local (esquema ferreteria): {e}")
         finally:
             db.close()
 
@@ -255,7 +255,6 @@ INSTRUCCIONES DE RESPUESTA:
     try:
         client = genai.Client(api_key=gemini_key)
         
-        # Invocación directa a Gemini 3.5 Flash
         response = client.models.generate_content(
             model="gemini-3.5-flash-lite",
             contents=prompt_sistema,
@@ -266,7 +265,6 @@ INSTRUCCIONES DE RESPUESTA:
             )
         )
 
-        # Si el modelo solicitó ejecutar alguna herramienta de Function Calling
         if response.function_calls:
             for call in response.function_calls:
                 nombre_fn = call.name
@@ -354,7 +352,7 @@ def procesar_mensaje_en_segundo_plano(msg_id: str, from_number: str, text_body: 
 
         reply = ask_agent(text_body, from_number, nombre)
         send_whatsapp_message(from_number, reply)
-        print(f"🤖 [Respuesta Enviada a {from_number}]: {reply}\n")
+        print(f"🤖 [Respuesta Ferretería Enviada a {from_number}]: {reply}\n")
     except Exception as e:
         print(f"❌ Error en segundo plano: {e}")
     finally:
@@ -390,7 +388,7 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
 
                     if msg.get("type") == "text":
                         text_body = msg.get("text", {}).get("body", "")
-                        print(f"\n📩 [WhatsApp de {nombre} ({from_number})]: {text_body}")
+                        print(f"\n📩 [WhatsApp Ferretería de {nombre} ({from_number})]: {text_body}")
 
                         background_tasks.add_task(
                             procesar_mensaje_en_segundo_plano,
@@ -430,4 +428,4 @@ async def enviar_mensaje_manual(data: MensajeManualRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("agent_whatsapp:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("agent_ferreteria:app", host="0.0.0.0", port=8000, reload=True)

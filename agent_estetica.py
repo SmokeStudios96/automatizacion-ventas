@@ -132,7 +132,7 @@ INSTRUCCIONES DE RESPUESTA:
         response = client.models.generate_content(
             model="gemini-3.5-flash",
             contents=prompt_sistema,
-            config=types.GenerateContentConfig(temperature=0.3, max_output_tokens=800)
+            config=types.GenerateContentConfig(temperature=0.3, max_output_tokens=1500)
         )
 
         if response and response.text:

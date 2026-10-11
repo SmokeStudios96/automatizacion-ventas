@@ -11,7 +11,7 @@ from googleapiclient.discovery import build
 from google import genai
 from google.genai import types
 
-from database import guardar_historial_seguro, sincronizar_chat_supabase
+from database import guardar_historial_seguro, sincronizar_chat_supabase, SessionLocal
 from calendar_estetica_tool import book_estetica_appointment, get_available_slots_estetica
 
 # ------------------------------------------------------------------------------
@@ -38,6 +38,30 @@ def obtener_bloques_ocupados(fecha_str: str) -> str:
     return get_available_slots_estetica(fecha_str)
 
 
+def obtener_historial_chat(clean_phone: str) -> str:
+    """Recupera los últimos 6 mensajes del historial desde PostgreSQL para dar contexto."""
+    try:
+        db = SessionLocal()
+        sql_hist = """
+            SELECT remitente, mensaje 
+            FROM historial_chats 
+            WHERE telefono = :tel AND agente = 'estetica'
+            ORDER BY fecha_hora DESC LIMIT 6;
+        """
+        rows = db.execute(sql_hist, {"tel": clean_phone}).fetchall()
+        db.close()
+        
+        if rows:
+            mensajes_previos = []
+            for r in reversed(rows):
+                rol = "Cliente" if r.remitente == "cliente" else "Asistente"
+                mensajes_previos.append(f"{rol}: {r.mensaje}")
+            return "\n".join(mensajes_previos)
+    except Exception as err_hist:
+        print(f"⚠️ No se pudo cargar el historial: {err_hist}")
+    return ""
+
+
 # ------------------------------------------------------------------------------
 # 2. Datos del Negocio (Estética y Academia PMU - Ona Songailaite)
 # ------------------------------------------------------------------------------
@@ -47,9 +71,9 @@ def obtener_datos_negocio():
         "persona_ia": "Asistente virtual especialista en atención al cliente de Ona Songailaite",
         "reglas_atencion": (
             "1. Eres cálida, profesional, directa y experta en belleza, micropigmentación (PMU), microblading y formaciones profesionales.\n"
-            "2. IMPORTANTE PARA NATURALIDAD: Saluda una sola vez al inicio. Si el cliente responde una pregunta previa (ej: 'Sí, primera vez', 'A las 10 hrs', 'Lunes'), NO VUELVAS A SALUDAR NI A DAR LA BIENVENIDA. Responde de forma directa y fluida a lo que dijo.\n"
+            "2. IMPORTANTE PARA NATURALIDAD: Revisa el HISTORIAL. Saluda una sola vez al inicio de la interacción. Si el cliente está respondiendo una pregunta de seguimiento (ej: 'Sí, primera vez', 'A las 10 hrs', 'Lunes'), NO VUELVAS A SALUDAR NI A DAR LA BIENVENIDA. Responde de forma fluida y continua.\n"
             "3. Informa sobre los servicios estéticos y sus valores exactos cuando el cliente pregunte.\n"
-            "4. Si el cliente quiere agendar una cita y ya indicó el servicio, la fecha y la hora, invoca inmediatamente la herramienta 'book_estetica_appointment'.\n"
+            "4. Si en el historial o mensaje actual el cliente indica servicio, fecha y hora (ej: Microblading, Lunes a las 10:00 hrs), UTILIZA DE INMEDIATO la herramienta 'book_estetica_appointment'.\n"
             "5. Deriva al contacto humano ante dudas complejas de salud o requerimientos especiales."
         ),
         "telefono_contacto": CONTACTO_HUMANO,
@@ -103,15 +127,22 @@ def ask_agent(user_text: str, telefono_cliente: str, nombre_cliente: str = "Clie
     datos = obtener_datos_negocio()
     clean_phone = telefono_cliente.replace("+", "").strip()
 
+    # Cargar historial de conversación
+    historial_texto = obtener_historial_chat(clean_phone)
+
+    tz_chile = timezone(timedelta(hours=-3))
+    ahora_chile = datetime.now(tz_chile)
+    fecha_actual_str = ahora_chile.strftime("%Y-%m-%d %H:%M:%S")
+
     texto_lower = user_text.lower()
     info_agenda = ""
     if any(kw in texto_lower for kw in ["hoy", "mañana", "lunes", "martes", "miercoles", "miércoles", "jueves", "viernes", "sabado", "sábado", "agendar", "cita", "curso", "cupo", "hora", "disponibilidad"]):
-        tz_chile = timezone(timedelta(hours=-3))
-        hoy = datetime.now(tz_chile)
-        fecha_consulta = (hoy + timedelta(days=1)).strftime("%Y-%m-%d") if "mañana" in texto_lower else hoy.strftime("%Y-%m-%d")
+        fecha_consulta = (ahora_chile + timedelta(days=1)).strftime("%Y-%m-%d") if "mañana" in texto_lower else ahora_chile.strftime("%Y-%m-%d")
         info_agenda = obtener_bloques_ocupados(fecha_consulta)
 
     prompt_sistema = f"""Eres {datos['persona_ia']} de {datos['nombre_negocio']}.
+Fecha y Hora Actual en Chile: {fecha_actual_str}
+
 Reglas de atención:
 {datos['reglas_atencion']}
 
@@ -120,14 +151,18 @@ Servicios, Precios y Capacitaciones Principales:
 
 Disponibilidad en Google Calendar: [{info_agenda if info_agenda else 'Sin consulta de agenda directa.'}]
 
-Cliente: {nombre_cliente} | Teléfono: {clean_phone}
-Mensaje actual del cliente: {user_text}
+HISTORIAL DE LA CONVERSACIÓN RECIENTE CON ESTE CLIENTE:
+{historial_texto if historial_texto else "Sin mensajes previos registrados."}
 
-INSTRUCCIONES DE RESPUESTA:
-- Responde de forma elegante, cercana, clara, concisa y muy natural para WhatsApp.
-- NO saludes de nuevo si el usuario solo está respondiendo una pregunta de seguimiento.
-- Si el cliente quiere agendar y especifica servicio, fecha u hora, UTILIZA DE INMEDIATO 'book_estetica_appointment' para guardar la cita en Google Calendar.
-- Si solo consulta disponibilidades, invoca 'get_available_slots_estetica'."""
+DATOS DEL CLIENTE ACTUAL:
+Nombre: {nombre_cliente} | Teléfono: {clean_phone}
+Último mensaje recibido: {user_text}
+
+INSTRUCCIONES DE RESPUESTA Y ACCIÓN:
+- Revisa el HISTORIAL para mantener la continuidad de la charla. No olvides lo que el cliente ya te dijo.
+- Si en el historial o en el mensaje actual el cliente ya definió el servicio (ej: Microblading de Cejas) y la fecha/hora, EJECUTA DE INMEDIATO 'book_estetica_appointment'.
+- Si solo consulta disponibilidades, usa 'get_available_slots_estetica'.
+- Responde de forma cercana, natural y orientada a la conversión en WhatsApp."""
 
     try:
         client = genai.Client(api_key=gemini_key)
@@ -149,7 +184,7 @@ INSTRUCCIONES DE RESPUESTA:
                 res_tool = ""
                 try:
                     if nombre_fn == "get_available_slots_estetica":
-                        fecha_arg = args.get("fecha_str", datetime.now().strftime("%Y-%m-%d"))
+                        fecha_arg = args.get("fecha_str", ahora_chile.strftime("%Y-%m-%d"))
                         res_tool = get_available_slots_estetica(date_str=fecha_arg)
                     elif nombre_fn == "book_estetica_appointment":
                         res_tool = book_estetica_appointment(

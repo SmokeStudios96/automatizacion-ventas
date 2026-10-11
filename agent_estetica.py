@@ -171,7 +171,7 @@ INSTRUCCIONES DE HERRAMIENTAS Y ACCIÓN:
     try:
         client = genai.Client(api_key=gemini_key)
         response = client.models.generate_content(
-            model="gemini-3.6-flash",
+            model="gemini-3.8-flash",
             contents=prompt_sistema,
             config=types.GenerateContentConfig(
                 temperature=0.1,

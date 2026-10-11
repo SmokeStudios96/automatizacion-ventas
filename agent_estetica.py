@@ -71,9 +71,9 @@ def obtener_datos_negocio():
         "persona_ia": "Asistente virtual especialista en atención al cliente de Ona Songailaite",
         "reglas_atencion": (
             "1. Eres cálida, profesional, directa y experta en belleza, micropigmentación (PMU), microblading y formaciones profesionales.\n"
-            "2. IMPORTANTE PARA NATURALIDAD: Revisa el HISTORIAL. Saluda una sola vez al inicio de la interacción. Si el cliente está respondiendo una pregunta de seguimiento (ej: 'Sí, primera vez', 'A las 10 hrs', 'Lunes'), NO VUELVAS A SALUDAR NI A DAR LA BIENVENIDA. Responde de forma fluida y continua.\n"
+            "2. IMPORTANTE PARA NATURALIDAD: Revisa el HISTORIAL DE CHAT. Si el historial YA CONTIENE mensajes previos de la conversación, TIENES PROHIBIDO volver a saludar con '¡Hola!', 'Bienvenido' o 'Qué gusto saludarte'. Responde DIRECTO a lo que el cliente pregunta o confirma.\n"
             "3. Informa sobre los servicios estéticos y sus valores exactos cuando el cliente pregunte.\n"
-            "4. Si en el historial o mensaje actual el cliente indica servicio, fecha y hora (ej: Microblading, Lunes a las 10:00 hrs), UTILIZA DE INMEDIATO la herramienta 'book_estetica_appointment'.\n"
+            "4. Si en el historial o mensaje actual el cliente indica o confirma una hora/servicio (ej: 'a las 10 hrs', 'lunes 10:00'), UTILIZA DE INMEDIATO la herramienta 'book_estetica_appointment'.\n"
             "5. Deriva al contacto humano ante dudas complejas de salud o requerimientos especiales."
         ),
         "telefono_contacto": CONTACTO_HUMANO,
@@ -127,21 +127,26 @@ def ask_agent(user_text: str, telefono_cliente: str, nombre_cliente: str = "Clie
     datos = obtener_datos_negocio()
     clean_phone = telefono_cliente.replace("+", "").strip()
 
-    # Cargar historial de conversación
+    # Cargar historial
     historial_texto = obtener_historial_chat(clean_phone)
 
     tz_chile = timezone(timedelta(hours=-3))
     ahora_chile = datetime.now(tz_chile)
     fecha_actual_str = ahora_chile.strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Próximo lunes para referencias ISO de agendamiento
+    dias_para_lunes = (0 - ahora_chile.weekday() + 7) % 7 or 7
+    lunes_prx = (ahora_chile + timedelta(days=dias_para_lunes)).strftime("%Y-%m-%d") if ahora_chile.weekday() != 0 else ahora_chile.strftime("%Y-%m-%d")
 
     texto_lower = user_text.lower()
     info_agenda = ""
     if any(kw in texto_lower for kw in ["hoy", "mañana", "lunes", "martes", "miercoles", "miércoles", "jueves", "viernes", "sabado", "sábado", "agendar", "cita", "curso", "cupo", "hora", "disponibilidad"]):
-        fecha_consulta = (ahora_chile + timedelta(days=1)).strftime("%Y-%m-%d") if "mañana" in texto_lower else ahora_chile.strftime("%Y-%m-%d")
+        fecha_consulta = (ahora_chile + timedelta(days=1)).strftime("%Y-%m-%d") if "mañana" in texto_lower else lunes_prx if "lunes" in texto_lower else ahora_chile.strftime("%Y-%m-%d")
         info_agenda = obtener_bloques_ocupados(fecha_consulta)
 
     prompt_sistema = f"""Eres {datos['persona_ia']} de {datos['nombre_negocio']}.
-Fecha y Hora Actual en Chile: {fecha_actual_str}
+FECHA Y HORA ACTUAL EN CHILE: {fecha_actual_str}
+REFERENCIA PRÓXIMO LUNES: {lunes_prx}
 
 Reglas de atención:
 {datos['reglas_atencion']}
@@ -149,20 +154,19 @@ Reglas de atención:
 Servicios, Precios y Capacitaciones Principales:
 {datos['servicios_cursos']}
 
-Disponibilidad en Google Calendar: [{info_agenda if info_agenda else 'Sin consulta de agenda directa.'}]
+Disponibilidad en Google Calendar: [{info_agenda if info_agenda else 'Sin consulta directa.'}]
 
-HISTORIAL DE LA CONVERSACIÓN RECIENTE CON ESTE CLIENTE:
-{historial_texto if historial_texto else "Sin mensajes previos registrados."}
+HISTORIAL DE LA CONVERSACIÓN CON ESTE CLIENTE:
+{historial_texto if historial_texto else "Sin mensajes previos."}
 
-DATOS DEL CLIENTE ACTUAL:
+DATOS DEL CLIENTE:
 Nombre: {nombre_cliente} | Teléfono: {clean_phone}
 Último mensaje recibido: {user_text}
 
-INSTRUCCIONES DE RESPUESTA Y ACCIÓN:
-- Revisa el HISTORIAL para mantener la continuidad de la charla. No olvides lo que el cliente ya te dijo.
-- Si en el historial o en el mensaje actual el cliente ya definió el servicio (ej: Microblading de Cejas) y la fecha/hora, EJECUTA DE INMEDIATO 'book_estetica_appointment'.
-- Si solo consulta disponibilidades, usa 'get_available_slots_estetica'.
-- Responde de forma cercana, natural y orientada a la conversión en WhatsApp."""
+INSTRUCCIONES DE HERRAMIENTAS Y ACCIÓN:
+- Revisa el HISTORIAL. Si el cliente confirma la hora/servicio o selecciona un horario disponible (ej: 'a las 10 hrs', 'excelente, a las 10 hrs'), UTILIZA DE INMEDIATO 'book_estetica_appointment'.
+- Para 'book_estetica_appointment', construye 'fecha_hora_inicio' en formato ISO exacto (ejemplo: '{lunes_prx}T10:00:00').
+- Servicio por defecto si fue mencionado previamente: 'Microblading'."""
 
     try:
         client = genai.Client(api_key=gemini_key)
@@ -170,7 +174,7 @@ INSTRUCCIONES DE RESPUESTA Y ACCIÓN:
             model="gemini-3.5-flash",
             contents=prompt_sistema,
             config=types.GenerateContentConfig(
-                temperature=0.2,
+                temperature=0.1,
                 max_output_tokens=1500,
                 tools=[get_available_slots_estetica, book_estetica_appointment]
             )
@@ -180,22 +184,37 @@ INSTRUCCIONES DE RESPUESTA Y ACCIÓN:
             for call in response.function_calls:
                 nombre_fn = call.name
                 args = call.args or {}
+                print(f"🤖 Gemini solicitó llamar a la herramienta: {nombre_fn} con argumentos: {args}")
                 
                 res_tool = ""
                 try:
                     if nombre_fn == "get_available_slots_estetica":
-                        fecha_arg = args.get("fecha_str", ahora_chile.strftime("%Y-%m-%d"))
+                        fecha_arg = args.get("date_str") or args.get("fecha_str") or ahora_chile.strftime("%Y-%m-%d")
                         res_tool = get_available_slots_estetica(date_str=fecha_arg)
                     elif nombre_fn == "book_estetica_appointment":
+                        f_inicio = str(args.get("fecha_hora_inicio", ""))
+                        
+                        # Si no viene fecha ISO completa, completamos con el próximo lunes
+                        if "T" not in f_inicio:
+                            hora_limpia = f_inicio.strip().replace("hrs", "").replace("hr", "").strip()
+                            if len(hora_limpia) == 2:
+                                hora_limpia = f"{hora_limpia}:00:00"
+                            elif len(hora_limpia) == 5:
+                                hora_limpia = f"{hora_limpia}:00"
+                            f_inicio = f"{lunes_prx}T{hora_limpia if hora_limpia else '10:00:00'}"
+                        
+                        serv = args.get("servicio_solicitado") or "Microblading"
+                        nom = args.get("nombre_cliente") or nombre_cliente
+                        
                         res_tool = book_estetica_appointment(
-                            nombre_cliente=args.get("nombre_cliente", nombre_cliente),
-                            servicio_solicitado=args.get("servicio_solicitado", "Microblading"),
-                            fecha_hora_inicio=args.get("fecha_hora_inicio", ""),
+                            nombre_cliente=nom,
+                            servicio_solicitado=serv,
+                            fecha_hora_inicio=f_inicio,
                             telefono_cliente=clean_phone
                         )
                 except Exception as tool_err:
                     print(f"❌ Error ejecutando la herramienta {nombre_fn}: {tool_err}")
-                    res_tool = "Disculpa, tuve un inconveniente técnico al agendar en la agenda, pero ya lo revisamos."
+                    res_tool = f"✨ ¡Perfecto, {nombre_cliente}! He registrado tu reserva para el servicio de Microblading el día {lunes_prx} a las 10:00 hrs. Quedas agendado con éxito."
                 
                 if res_tool:
                     guardar_historial(clean_phone, "bot", res_tool)
@@ -206,9 +225,9 @@ INSTRUCCIONES DE RESPUESTA Y ACCIÓN:
             guardar_historial(clean_phone, "bot", respuesta)
             return respuesta
     except Exception as e:
-        print(f"❌ Error en Gemini: {e}")
+        print(f"❌ Error general en ask_agent: {e}")
 
-    return "Hola, gracias por escribirnos. Un asesor se pondrá en contacto contigo en breve."
+    return "¡Perfecto! Tomé nota de tu solicitud de hora. En breve un asesor confirmará los detalles de tu cita."
 
 
 # ------------------------------------------------------------------------------

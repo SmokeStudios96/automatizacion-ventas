@@ -46,10 +46,11 @@ def obtener_datos_negocio():
         "nombre_negocio": "Academia y Estética PMU - Ona Songailaite",
         "persona_ia": "Asistente virtual especialista en atención al cliente de Ona Songailaite",
         "reglas_atencion": (
-            "1. Eres cálida, profesional y experta en belleza, micropigmentación (PMU), microblading y formaciones profesionales.\n"
-            "2. Informa sobre los servicios estéticos y sus valores exactos cuando el cliente pregunte.\n"
-            "3. Si el cliente quiere agendar una evaluación o procedimiento, consulta su disponibilidad y ayúdale a reservar.\n"
-            "4. Deriva al contacto humano ante dudas complejas de salud o requerimientos especiales."
+            "1. Eres cálida, profesional, directa y experta en belleza, micropigmentación (PMU), microblading y formaciones profesionales.\n"
+            "2. IMPORTANTE PARA NATURALIDAD: Saluda una sola vez al inicio. Si el cliente responde una pregunta previa (ej: 'Sí, primera vez', 'A las 10 hrs', 'Lunes'), NO VUELVAS A SALUDAR NI A DAR LA BIENVENIDA. Responde de forma directa y fluida a lo que dijo.\n"
+            "3. Informa sobre los servicios estéticos y sus valores exactos cuando el cliente pregunte.\n"
+            "4. Si el cliente quiere agendar una cita y ya indicó el servicio, la fecha y la hora, invoca inmediatamente la herramienta 'book_estetica_appointment'.\n"
+            "5. Deriva al contacto humano ante dudas complejas de salud o requerimientos especiales."
         ),
         "telefono_contacto": CONTACTO_HUMANO,
         "servicios_cursos": (
@@ -104,7 +105,7 @@ def ask_agent(user_text: str, telefono_cliente: str, nombre_cliente: str = "Clie
 
     texto_lower = user_text.lower()
     info_agenda = ""
-    if any(kw in texto_lower for kw in ["hoy", "mañana", "agendar", "cita", "curso", "cupo", "hora", "disponibilidad"]):
+    if any(kw in texto_lower for kw in ["hoy", "mañana", "lunes", "martes", "miercoles", "miércoles", "jueves", "viernes", "sabado", "sábado", "agendar", "cita", "curso", "cupo", "hora", "disponibilidad"]):
         tz_chile = timezone(timedelta(hours=-3))
         hoy = datetime.now(tz_chile)
         fecha_consulta = (hoy + timedelta(days=1)).strftime("%Y-%m-%d") if "mañana" in texto_lower else hoy.strftime("%Y-%m-%d")
@@ -120,20 +121,50 @@ Servicios, Precios y Capacitaciones Principales:
 Disponibilidad en Google Calendar: [{info_agenda if info_agenda else 'Sin consulta de agenda directa.'}]
 
 Cliente: {nombre_cliente} | Teléfono: {clean_phone}
-Mensaje del cliente: {user_text}
+Mensaje actual del cliente: {user_text}
 
 INSTRUCCIONES DE RESPUESTA:
-- Responde de forma elegante, cercana, clara y orientada a la conversión para WhatsApp.
-- Si pregunta por precios o servicios, entrégale la lista clara con sus valores exactos.
-- Si muestra interés en un curso o procedimiento, explícale los detalles e invítale a asegurar su cupo o cita."""
+- Responde de forma elegante, cercana, clara, concisa y muy natural para WhatsApp.
+- NO saludes de nuevo si el usuario solo está respondiendo una pregunta de seguimiento.
+- Si el cliente quiere agendar y especifica servicio, fecha u hora, UTILIZA DE INMEDIATO 'book_estetica_appointment' para guardar la cita en Google Calendar.
+- Si solo consulta disponibilidades, invoca 'get_available_slots_estetica'."""
 
     try:
         client = genai.Client(api_key=gemini_key)
         response = client.models.generate_content(
             model="gemini-3.5-flash",
             contents=prompt_sistema,
-            config=types.GenerateContentConfig(temperature=0.3, max_output_tokens=1500)
+            config=types.GenerateContentConfig(
+                temperature=0.2,
+                max_output_tokens=1500,
+                tools=[get_available_slots_estetica, book_estetica_appointment]
+            )
         )
+
+        if response.function_calls:
+            for call in response.function_calls:
+                nombre_fn = call.name
+                args = call.args or {}
+                
+                res_tool = ""
+                try:
+                    if nombre_fn == "get_available_slots_estetica":
+                        fecha_arg = args.get("fecha_str", datetime.now().strftime("%Y-%m-%d"))
+                        res_tool = get_available_slots_estetica(date_str=fecha_arg)
+                    elif nombre_fn == "book_estetica_appointment":
+                        res_tool = book_estetica_appointment(
+                            nombre_cliente=args.get("nombre_cliente", nombre_cliente),
+                            servicio_solicitado=args.get("servicio_solicitado", "Microblading"),
+                            fecha_hora_inicio=args.get("fecha_hora_inicio", ""),
+                            telefono_cliente=clean_phone
+                        )
+                except Exception as tool_err:
+                    print(f"❌ Error ejecutando la herramienta {nombre_fn}: {tool_err}")
+                    res_tool = "Disculpa, tuve un inconveniente técnico al agendar en la agenda, pero ya lo revisamos."
+                
+                if res_tool:
+                    guardar_historial(clean_phone, "bot", res_tool)
+                    return res_tool
 
         if response and response.text:
             respuesta = response.text.strip()

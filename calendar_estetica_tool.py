@@ -1,4 +1,5 @@
 import os
+import json
 import datetime
 from dotenv import load_dotenv
 from google.oauth2.service_account import Credentials
@@ -28,6 +29,15 @@ SERVICIOS_ESTETICA = {
 
 def get_calendar_service():
     """Autentica y devuelve el cliente de la API de Google Calendar."""
+    creds_json = os.getenv("GOOGLE_CREDENTIALS_JSON")
+    if creds_json:
+        try:
+            info = json.loads(creds_json)
+            creds = Credentials.from_service_account_info(info, scopes=SCOPES)
+            return build('calendar', 'v3', credentials=creds)
+        except Exception as e:
+            print(f"⚠️ Error cargando credenciales de Calendar desde env: {e}")
+
     if not os.path.exists(CREDENTIALS_FILE):
         raise FileNotFoundError(f"Archivo de credenciales '{CREDENTIALS_FILE}' no encontrado.")
     

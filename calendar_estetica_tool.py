@@ -15,7 +15,7 @@ CREDENTIALS_FILE = 'google_credentials.json'
 
 CALENDAR_ID = os.getenv(
     'GOOGLE_CALENDAR_ID_ESTETICA', 
-    'e4764b4b66087030b1f300da41c0813607582b569c2a297618fa04714ce121ce@group.calendar.google.com'
+    '3d67635731c445f2d208535468565e5e986f9c12b19c549b97048dfb16876ad4@group.calendar.google.com'
 )
 
 # Definición de servicios, duraciones (en minutos) y horarios de Ona Songailaite

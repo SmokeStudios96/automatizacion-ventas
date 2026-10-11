@@ -8,13 +8,13 @@ from database import SessionLocal
 # Cargar variables de entorno del archivo .env
 load_dotenv()
 
-# Configuración de Google Calendar
+# Configuración de Google Calendar para Clínica Dental
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 CREDENTIALS_FILE = 'google_credentials.json'
 
 CALENDAR_ID = os.getenv(
     'GOOGLE_CALENDAR_ID', 
-    'e4764b4b66087030b1f300da41c0813607582b569c2a297618fa04714ce121ce@group.calendar.google.com'
+    'd2ee41237b8fb7391cf7e1e7e0aa04fcf86203d38018965bdef56671430853c6@group.calendar.google.com'
 )
 
 # Definición del staff, especialidades y horarios de atención
